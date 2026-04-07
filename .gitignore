@@ -52,3 +52,8 @@ art/source/**/*.bak
 
 # Brainstormer session state (machine-local)
 .brainstormer-sessions.tsv
+.brainstormer-routing.tsv
+.brainstormer-version
+
+# Brainstormer ideation notes (kept local, not committed)
+brainstormer/
