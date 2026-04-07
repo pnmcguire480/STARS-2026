@@ -34,8 +34,14 @@
 ### Last Session
 
 - **Date:** 2026-04-07
-- **What was accomplished:** Phase 0a complete — files/ archived to reference/legacy-desktop-scaffold/, brainstormer init run, SPEC.md + brainstormer/angles.md + brainstormer/hooks.md authored from locked context, plan saved at C:\Users\pnmcg\.claude\plans\floofy-honking-melody.md
-- **Next session should start with:** Phase 0b — author fresh root Cargo workspace + SvelteKit frontend + docs/ARCHITECTURE.md + docs/FORMULAS.md skeletons. STOP for Patrick sign-off before any gameplay code.
+- **What was accomplished:**
+  - chore: CI, contributing, issue templates
+  - docs: SEO-optimized README + untrack brainstormer/
+  - chore: phase 0 â€” project skeleton
+- **Files changed:** 0 files across 3 commits
+- **Uncommitted changes:** 1 files
+- **CodeGlass:** 0 decisions flagged, 0 patterns detected
+- **Next session should start with:** Phase 1 Task 1 — write fresh `engine/src/types.rs` (study `reference/legacy-desktop-scaffold/types.rs` for ideas, do NOT inherit). Summon Phase 1 Council per AGENTS.md (Rust, Game Design, Plan, Refactoring). Sniff test → STOP for approval.
 
 ### What Works Right Now
 
