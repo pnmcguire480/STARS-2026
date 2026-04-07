@@ -1,0 +1,54 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+*.pdb
+
+# WASM build outputs
+pkg/
+wasm-pack.log
+
+# Node / SvelteKit
+node_modules/
+.svelte-kit/
+build/
+.vercel/
+.output/
+.netlify/
+dist/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Aseprite backups
+*.aseprite-backup
+art/source/**/*.bak
+
+# Brainstormer session state (machine-local)
+.brainstormer-sessions.tsv

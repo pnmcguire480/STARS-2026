@@ -1,0 +1,22 @@
+# Rust
+engine/target/
+**/*.rs.bk
+
+# Node/Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
+# Scenarios (holdout — do NOT expose to builder model)
+scenarios/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# WASM build artifacts
+frontend/src/lib/wasm/pkg/
