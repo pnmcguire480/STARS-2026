@@ -1,0 +1,53 @@
+name: 🌟 Veteran Knowledge
+description: You played the original. Tell us what you remember.
+labels: ["veteran-knowledge", "lore"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## You don't need to write code.
+
+        If you played *Stars!* in the 90s/2000s and remember a quirk, an edge case, a balance secret, or "the way it really worked" — we want to hear it. This is how we make STARS 2026 faithful.
+
+  - type: input
+    id: topic
+    attributes:
+      label: Topic
+      placeholder: "e.g. HE matchup vs IS, late-game minelayer chains, JOAT scanner stacking"
+    validations:
+      required: true
+
+  - type: textarea
+    id: knowledge
+    attributes:
+      label: What do you remember?
+      description: Stories, formulas, tactics, lore — anything goes. Detail is gold.
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Source (if any)
+      description: Forum thread, FAQ section, manual page, or "it's burned into my memory from 200 PBEM games"
+      placeholder: "Personal experience / forum link / FAQ page"
+
+  - type: dropdown
+    id: era
+    attributes:
+      label: When did you play?
+      multiple: true
+      options:
+        - "Shareware era (1995–1996)"
+        - "Full release era (1997–2000)"
+        - "PBEM golden age (2000–2005)"
+        - "Stars AutoHost era (2005–2015)"
+        - "Modern (still playing somehow)"
+
+  - type: checkboxes
+    id: clean
+    attributes:
+      label: Clean room confirmation
+      options:
+        - label: I am sharing knowledge from public sources or personal play, NOT from decompiled binaries or reverse-engineered material.
+          required: true

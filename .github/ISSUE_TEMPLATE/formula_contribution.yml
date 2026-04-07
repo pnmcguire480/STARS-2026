@@ -1,0 +1,50 @@
+name: 🔬 Formula Contribution
+description: Help us source or correct a game formula
+labels: ["formula", "knowledge"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every formula in STARS 2026 must trace to a public source. If you can help us source one, **thank you** — this is the highest-leverage contribution there is.
+
+  - type: input
+    id: system
+    attributes:
+      label: Game system
+      placeholder: "e.g. population growth, beam attenuation, mineral depletion"
+    validations:
+      required: true
+
+  - type: textarea
+    id: formula
+    attributes:
+      label: The formula
+      description: As precise as you can make it. Math notation, pseudocode, or prose all fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: URL to FAQ/wiki/forum post, page in a manual, etc. The more authoritative, the better.
+      placeholder: "e.g. http://www.starsfaq.com/economy.htm § 'Population growth'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Worked example (optional)
+      description: A concrete input → output you've verified.
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: How confident are you?
+      options:
+        - "Certain — I have a primary source"
+        - "Pretty sure — community consensus"
+        - "Best guess — needs verification"
+    validations:
+      required: true
