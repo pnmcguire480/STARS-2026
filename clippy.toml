@@ -1,0 +1,54 @@
+# clippy.toml — STARS 2026 lint configuration
+#
+# This file converts soft governance rules into compile errors. Anything
+# listed in `disallowed-types` becomes a clippy::disallowed_types error
+# project-wide, which the workspace's `-D warnings` policy then promotes
+# to a build failure.
+#
+# Background:
+#   The Crucible (the multi-agent decision stress-test) flagged that
+#   STARS 2026's four governance decisions lived only in markdown memory
+#   files. Memory files are passive — a future session that doesn't
+#   read them can violate the rules without noticing. Three agents
+#   independently recommended encoding the BTreeMap rule in clippy.toml
+#   instead. This file is that fix.
+#
+#   ADR-0002 captures the full rationale for the hardening pass.
+
+# ─── Banned types ───────────────────────────────────────────────────────────
+#
+# Determinism rule: STARS 2026 must produce byte-identical state across
+# wasm32-unknown-unknown and native x86_64 from the same inputs. Rust's
+# std::collections::HashMap and HashSet use a randomized hasher (RandomState)
+# whose iteration order is non-deterministic per process, per target, and
+# per run. The moment a HashMap is iterated during turn generation,
+# serialized to IndexedDB, or hashed for the cross-target determinism gate,
+# two runs of the same seed diverge.
+#
+# Replace HashMap → BTreeMap, HashSet → BTreeSet. The B-tree variants
+# guarantee insertion-independent ordering by key, satisfying the
+# determinism contract at zero ergonomic cost.
+#
+# This rule originated as `feedback_determinism_btreemap.md` in persistent
+# memory; this file is its mechanical enforcement.
+
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "STARS 2026 determinism rule: HashMap iteration order is non-deterministic across wasm32 and native targets. Use std::collections::BTreeMap instead. See memory/feedback_determinism_btreemap.md and ADR-0002." },
+    { path = "std::collections::HashSet", reason = "STARS 2026 determinism rule: HashSet iteration order is non-deterministic across wasm32 and native targets. Use std::collections::BTreeSet instead. See memory/feedback_determinism_btreemap.md and ADR-0002." },
+]
+
+# ─── Future encoded rules (placeholders, intentionally commented) ───────────
+#
+# When the project hits the relevant atom, uncomment and verify with a
+# compile-fail test. Listed here so the encoded-rules-in-clippy.toml habit
+# is visible at a glance to any contributor or future session.
+#
+# - Tech cap 30: enforce via `pub const TECH_LEVEL_CAP: u8 = 30;` in
+#   types.rs plus a unit test that asserts the constant.
+# - Colonists newtype: enforced by Rust's type system once the inner field
+#   is `pub(crate)` (H5 fixup).
+# - Data-driven PRTs: enforced by the absence of any `enum Prt { ... }`
+#   variant — the registry pattern is the only way to introduce a PRT.
+#
+# These cannot all live in clippy.toml — some need types.rs structure,
+# some need integration tests. ADR-0002 lists the full mapping.

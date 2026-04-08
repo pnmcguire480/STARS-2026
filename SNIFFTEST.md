@@ -8,38 +8,69 @@
 
 No batching. No "I'll test it after the next three functions." No "the unit test passes so we're good." STOP at every function.
 
-## The Six Steps
+## How to run it
+
+**Single command, single source of truth:**
+
+```bash
+bash scripts/sniff.sh
+```
+
+The script runs all four mandatory gates in order and exits non-zero on
+any failure. CI runs the **same script verbatim**, so "I ran the sniff
+test" and "CI will pass" are the same statement. There is exactly one
+definition of "did the sniff test pass," and it lives in `scripts/sniff.sh`.
+
+If you find yourself running individual `cargo` commands instead of the
+script, stop — you are recreating the failure mode that ADR-0001 caught
+on commit `2180c78`. The script exists because the human cannot be
+trusted to remember every gate.
+
+To extend the sniff test (add a new gate), edit BOTH `scripts/sniff.sh`
+AND `.github/workflows/ci.yml`. The two are kept identical on purpose.
+ADR-0002 covers the rationale.
+
+## The Four Mandatory Gates
+
+`scripts/sniff.sh` runs these in order. ALL FOUR must exit 0.
+
+### Gate 1: Unit + module + workspace test (`cargo test`)
+- Every public fn touched in this atom has at least one `#[test]` exercising the happy path AND at least one edge case.
+- The test was written **with** the function, not after.
+- ALL tests in the workspace still pass — no previously-green test went red.
+
+### Gate 2: Lint (`cargo clippy --all-targets -- -D warnings`)
+- Pedantic clippy with **deny warnings**. Any new warning fails the gate.
+- The workspace's `clippy.toml` encodes governance rules as compile errors (HashMap → BTreeMap, etc.). New atoms must respect them.
+
+### Gate 3: Format (`cargo fmt --check`)
+- **The gate added by ADR-0001.** Author-time format drift is caught locally before it reaches CI.
+- If this gate fails, run `cargo fmt -p stars2026-engine` to apply, then **re-run the FULL sniff test from gate 1** (a reformat can theoretically affect test output).
+
+### Gate 4: WASM compile (`cargo check --target wasm32-unknown-unknown`)
+- **The gate added by ADR-0002.** STARS 2026's architectural premise is dual-target compilation from one source. If this gate fails, the project has lost its reason to exist regardless of how green native is.
+- This gate is the cheap proxy for the cross-target determinism contract. The full determinism gate is the integration test in `engine/tests/determinism.rs`, which must also pass on the wasm target once `wasm-bindgen-test` is wired (deferred — see ADR-0002).
+
+## The Six Steps (for the human author, around the four gates)
 
 For every function written or meaningfully changed:
 
-### 1. Unit Test
-- The function has at least one `#[test]` (Rust) or `it()` block (Vitest) in the same file or sibling test file.
-- The test exercises the happy path AND at least one edge case.
-- The test was written **with** the function, not after.
-- `cargo test <module>::tests::<function>` passes.
+### 1. Run gates 1–4 via `scripts/sniff.sh`
+The script is the source of truth. Do not run individual cargo commands and call it a sniff test.
 
-### 2. Module Test
-- All other tests in the same module still pass.
-- `cargo test <module>` is green.
-
-### 3. Acceptance Criteria Verification
+### 2. Acceptance Criteria Verification (human review)
 - Identify which AC(s) from `SPEC.md` this function contributes to.
 - Confirm the function moves us closer to that AC, not away from it.
 - If no AC applies, ask: "should this function exist?"
 
-### 4. Regression Check
-- Full crate test suite passes: `cargo test --workspace`.
-- No previously-green test went red.
-- Frontend (if touched): `npm run check && npm run test`.
-
-### 5. Manual Spot-Check
+### 3. Manual Spot-Check (human review)
 - Eyeball the diff. Is anything obviously off?
 - If a UI change: open the page, click the thing, confirm it works visually.
-- If an engine change with no UI: run the engine in a small REPL or test harness and confirm output matches expectation.
+- If an engine change with no UI: confirm test output matches expectation by reading the assertion, not just the green check.
 
-### 6. STOP
+### 4. STOP
 - Mark the task complete in TodoWrite.
-- Report what was done and which tests passed.
+- Report what was done — paste the `scripts/sniff.sh` output, not a summary.
 - Wait for "go" before starting the next function.
 
 ## What Counts as "a function"
@@ -62,16 +93,26 @@ Claude is notorious for:
 
 ## How To Report a Sniff Test Pass
 
-When you finish a function, report exactly:
+When you finish a function, paste the actual `scripts/sniff.sh` output —
+do NOT summarize or paraphrase. The literal output is the proof.
+
+Example (post-ADR-0002 format):
 
 ```
 Function: engine::planet::habitability_for
-Sniff test:
-  ✅ Unit test (3 cases): habitability_for::tests passed
-  ✅ Module test: cargo test planet — 12 passed
-  ✅ AC: contributes to AC-1 (determinism), S-04 (hab formula)
-  ✅ Regression: cargo test --workspace — 47 passed
-  ✅ Spot-check: ran sample race vs sample planet, output matches starsfaq.com example
+Atom:     2.7 of N (Phase 2 — planet.rs)
+
+▶ scripts/sniff.sh
+  ✓ test       (native)         — 47 passed
+  ✓ clippy     (pedantic, deny warnings)
+  ✓ fmt        (rustfmt --check)
+  ✓ wasm32     (dual-target gate)
+
+  AC contribution:  AC-1 (determinism), S-04 (hab formula)
+  Spot-check:       ran sample race vs sample planet, output matches
+                    starsfaq.com hab formula example for race=Humanoid,
+                    planet=(grav=50, temp=50, rad=50) → hab=100%
+
 STOP — awaiting approval.
 ```
 

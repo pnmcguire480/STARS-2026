@@ -320,6 +320,34 @@ impl MineralConcentrations {
             germanium,
         }
     }
+
+    /// Decrement a single mineral concentration atomically.
+    ///
+    /// Used by the mining phase to model the slow depletion of a planet's
+    /// extractable minerals as mines extract them. The operation saturates
+    /// at zero — concentrations cannot go negative — but reports an error
+    /// if the caller asked to deplete more than the field currently holds.
+    /// This forces mining code to track partial extractions explicitly
+    /// rather than silently clamping.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GameError::InsufficientResources`] if `amount` exceeds the
+    /// current concentration of `kind`. The struct is left unchanged on
+    /// failure (atomic-on-failure guarantee, matching [`Minerals::spend`]).
+    pub fn deplete(&mut self, kind: MineralType, amount: u32) -> Result<(), GameError> {
+        let field = match kind {
+            MineralType::Ironium => &mut self.ironium,
+            MineralType::Boranium => &mut self.boranium,
+            MineralType::Germanium => &mut self.germanium,
+        };
+        *field = field
+            .checked_sub(amount)
+            .ok_or(GameError::InsufficientResources(
+                "MineralConcentrations::deplete",
+            ))?;
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -374,15 +402,31 @@ pub enum HabAxis {
 }
 
 impl HabAxis {
-    /// Construct a bounded range with validation.
+    /// Construct a bounded range with full validation.
+    ///
+    /// Both `min` and `max` must lie inside the canonical Stars! 0–100
+    /// click range, and `min` must not exceed `max`. The check protects
+    /// downstream hab formulas from receiving negative widths or
+    /// out-of-range readings — the legacy scaffold validated only
+    /// `min ≤ max`, which let typos in scenario files create races whose
+    /// hab calculation divided by garbage.
+    ///
+    /// `EnvClick` remains `i32` for serde compatibility with the existing
+    /// `Environment` field type, but values must lie in `0..=100` even so.
     ///
     /// # Errors
     ///
-    /// Returns [`GameError::InvalidRace`] if `min > max`, which would
-    /// describe an empty (unlivable) window — a nonsensical race.
+    /// Returns [`GameError::InvalidRace`] if `min > max`, if `min < 0`, or
+    /// if `max > 100`. The struct is unconstructed on failure.
     pub fn range(min: EnvClick, max: EnvClick) -> Result<Self, GameError> {
         if min > max {
             return Err(GameError::InvalidRace("HabAxis::range min exceeds max"));
+        }
+        if min < 0 {
+            return Err(GameError::InvalidRace("HabAxis::range min below 0"));
+        }
+        if max > 100 {
+            return Err(GameError::InvalidRace("HabAxis::range max above 100"));
         }
         Ok(Self::Range { min, max })
     }
@@ -417,10 +461,13 @@ pub struct HabRanges {
 /// few stars above or below the target for a given seed. The values here
 /// mirror the legacy scaffold, which was calibrated against the 1995 game
 /// defaults and the craig-stars reference implementation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub enum GalaxySize {
     Tiny,
     Small,
+    #[default]
     Medium,
     Large,
     Huge,
@@ -474,9 +521,12 @@ impl GalaxySize {
 /// Galaxy density preset — controls how tightly stars cluster during
 /// procedural generation. Denser galaxies place more stars within the
 /// same map dimension, leading to closer neighbors and faster contact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub enum GalaxyDensity {
     Sparse,
+    #[default]
     Normal,
     Dense,
     Packed,
@@ -508,18 +558,45 @@ pub enum GalaxyDensity {
 /// `PrtId` and [`LrtId`] are **distinct types**: the compiler refuses to mix
 /// them even though both wrap `String`, preventing an LRT id from being
 /// accidentally passed where a PRT id is required.
+///
+/// The inner field is `pub(crate)` rather than `pub` so that callers
+/// outside the engine crate cannot construct ids directly — they must
+/// route through the loader / registry that owns validation. Inside the
+/// crate, tests and the registry constructor still have direct access.
+/// Use [`PrtId::as_str`] for read-only inspection.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct PrtId(pub String);
+pub struct PrtId(pub(crate) String);
+
+impl PrtId {
+    /// Borrow the underlying id string for read-only inspection. Used by
+    /// the registry, save/load, and any UI code that needs to display the
+    /// trait code. Construction is intentionally NOT exposed at this layer
+    /// — the registry's loader is the only legal source of new ids.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Identifier for a Lesser Racial Trait, as loaded from `data/lrt_traits.json`.
 ///
-/// See [`PrtId`] for the data-driven rationale and equality semantics. The
-/// two types are intentionally structurally identical but nominally
-/// distinct — the compiler enforces that distinction, not any runtime check.
+/// See [`PrtId`] for the data-driven rationale, equality semantics, and
+/// `pub(crate)` field reasoning. The two types are intentionally
+/// structurally identical but nominally distinct — the compiler enforces
+/// that distinction, not any runtime check.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct LrtId(pub String);
+pub struct LrtId(pub(crate) String);
+
+impl LrtId {
+    /// Borrow the underlying id string for read-only inspection. See
+    /// [`PrtId::as_str`] for the rationale.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 // =============================================================================
 // Technology — fields, levels, research allocation
@@ -549,15 +626,27 @@ pub enum TechField {
     Biotechnology,
 }
 
+/// The maximum tech level any single research field can reach.
+///
+/// **STARS 2026 deviation from Stars! 1995 canon.** The 1995 game caps tech
+/// fields at 26; STARS 2026 caps them at **30**, extending the late-game by
+/// four tiers as the project's signature mechanical contribution. LRT/PRT
+/// bonuses (via the trait registry's `tech_level_cap_bonus` field) can push
+/// individual fields above this base cap. Pinned in `memory/project_tech_cap_30.md`
+/// and ADR-0002.
+pub const TECH_LEVEL_CAP: u32 = 30;
+
 /// A player's current tech levels across all six fields.
 ///
 /// Stored as per-field `u32`s for efficient comparison and trivial serde.
 /// The default is all zeros — a fresh empire with no research.
 ///
-/// This struct **does not enforce the 30-level cap.** It is a pure data
-/// container. The tech cap (and the extended STARS 2026 cap of 30 vs
-/// canon 26) is enforced in the research-allocation function that lives
-/// in `tech.rs` (future atom).
+/// **Cap enforcement:** [`TechLevels::set`] refuses values above
+/// [`TECH_LEVEL_CAP`] and returns [`GameError::InvalidRace`]. Direct field
+/// writes are still possible (the fields are `pub` for serde and tests),
+/// but anything that goes through the public method path is checked.
+/// Cap-relaxing trait bonuses are applied at the research-allocation site,
+/// not at the storage layer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TechLevels {
     pub energy: u32,
@@ -582,11 +671,20 @@ impl TechLevels {
         }
     }
 
-    /// Write a new level into a specific field.
+    /// Write a new level into a specific field, with cap enforcement.
     ///
-    /// Takes `&mut self`. No validation — the cap check happens in the
-    /// research function that calls this, not here.
-    pub const fn set(&mut self, field: TechField, level: u32) {
+    /// # Errors
+    ///
+    /// Returns [`GameError::InvalidRace`] if `level` exceeds the base
+    /// [`TECH_LEVEL_CAP`] of 30. Trait-bonus extensions above the cap are
+    /// the responsibility of `tech.rs` and must apply *before* calling
+    /// `set`, not after — the storage layer is the ground floor.
+    pub fn set(&mut self, field: TechField, level: u32) -> Result<(), GameError> {
+        if level > TECH_LEVEL_CAP {
+            return Err(GameError::InvalidRace(
+                "TechLevels::set above TECH_LEVEL_CAP",
+            ));
+        }
         match field {
             TechField::Energy => self.energy = level,
             TechField::Weapons => self.weapons = level,
@@ -595,6 +693,7 @@ impl TechLevels {
             TechField::Electronics => self.electronics = level,
             TechField::Biotechnology => self.biotechnology = level,
         }
+        Ok(())
     }
 
     /// Returns `true` iff `self` meets or exceeds `required` in **every**
@@ -837,7 +936,14 @@ impl Cargo {
     /// cases, and silent wrap is a determinism violation.
     #[must_use]
     pub const fn total_mass(&self) -> u64 {
-        self.ironium as u64 + self.boranium as u64 + self.germanium as u64 + self.colonists.0 as u64
+        // Reach for the public accessor `units()` rather than `colonists.0`
+        // even though we are inside the same crate. This sets the
+        // encapsulation precedent for every future consumer of `Colonists`
+        // — once one site reaches into `.0`, every other site will follow.
+        self.ironium as u64
+            + self.boranium as u64
+            + self.germanium as u64
+            + self.colonists.units() as u64
     }
 }
 
@@ -1095,30 +1201,53 @@ pub enum GameStatus {
 
 /// Game configuration chosen at creation time.
 ///
-/// **Determinism note:** this struct has no `Default` impl. The legacy
-/// scaffold's `Default::default()` set `random_seed: 0` with a comment
-/// saying "0 = generate from system time" — a sentinel-for-hostness that
-/// is a classic determinism foot-gun. The engine never generates its
-/// own seeds; it receives them from the host (browser, server, CLI).
-/// Construct `GameSettings` explicitly at every call site, and the type
-/// will tell you if you forgot the seed by failing to compile.
+/// **Two design notes:**
+///
+/// 1. **No `Default` impl.** The legacy scaffold's `Default::default()`
+///    set `random_seed: 0` with a comment saying "0 = generate from
+///    system time" — a sentinel-for-hostness that is a classic
+///    determinism foot-gun. The engine never generates its own seeds; it
+///    receives them from the host (browser, server, CLI). Programmatic
+///    construction must be explicit, and the type will tell you if you
+///    forgot the seed by failing to compile.
+///
+/// 2. **Serde defaults on every non-seed field.** This is the
+///    save-compatibility fix from H5 of the hardening pass. When a v0.2
+///    engine adds a new field (e.g. `enable_mystery_trader: bool`),
+///    every existing v0.1 save must still load — otherwise every player
+///    in the wild loses their game on the next update. Each field below
+///    is annotated with `#[serde(default)]` so missing fields fall back
+///    to their type's `Default::default()` at deserialize time.
+///    `random_seed` is intentionally NOT defaulted: a missing seed must
+///    be a hard error, never silently zeroed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GameSettings {
+    #[serde(default)]
     pub galaxy_size: GalaxySize,
+    #[serde(default)]
     pub density: GalaxyDensity,
+    #[serde(default)]
     pub player_count: u32,
+    #[serde(default)]
     pub starting_year: u32,
+    #[serde(default)]
     pub victory_conditions: Vec<VictoryCondition>,
     /// How many of the listed victory conditions must be met simultaneously
     /// for the game to end. `1` = any-one-of; `N` = all-of where N equals
     /// `victory_conditions.len()`.
+    #[serde(default)]
     pub victory_requirements_met: u32,
+    #[serde(default)]
     pub ai_difficulty: AiDifficulty,
     /// The deterministic seed that drives **every** RNG decision in this
     /// game, from galaxy generation to combat rolls. The engine derives
     /// subsystem-specific seeds via `(random_seed, turn, player_id,
     /// subsystem)` tuples, so this one `u64` is the root of all
     /// non-determinism in the match.
+    ///
+    /// **No serde default.** A save file or scenario missing this field
+    /// is a hard error rather than a silent zero — the determinism
+    /// contract requires the seed to be explicit.
     pub random_seed: u64,
 }
 
@@ -1143,6 +1272,77 @@ pub struct Star {
 }
 
 impl TurnPhase {
+    /// The canonical 33-step Stars! order-of-events. The length is
+    /// asserted at *compile time* by [`CANONICAL_ORDER`]'s `[Self; 33]`
+    /// type — adding or removing a variant from the enum without also
+    /// updating the array literal below is a build error, not a runtime
+    /// surprise. Combined with [`Self::variant_count`], this gives a
+    /// belt-and-braces tripwire against the enum drifting out of sync
+    /// with the canonical sequence.
+    ///
+    /// [`CANONICAL_ORDER`]: Self::CANONICAL_ORDER
+    /// [`Self::variant_count`]: Self::variant_count
+    ///
+    /// Variant count, computed by exhaustively matching every variant.
+    /// Adding a new variant to the enum without adding it here is a
+    /// build error — `match` exhaustiveness catches the omission. The
+    /// returned count must equal `CANONICAL_ORDER.len()`, which is
+    /// asserted in the test suite.
+    //
+    // The exhaustive `match` below is the load-bearing part: rustc will
+    // reject this function if a TurnPhase variant is added without a
+    // corresponding arm here. The `clippy::match_same_arms` lint would
+    // otherwise want us to collapse all 33 empty arms into a single
+    // `|`-chain, which would defeat the tripwire by removing the
+    // per-variant maintenance forcing function. Allow it locally with
+    // a justifying comment.
+    #[must_use]
+    #[allow(
+        clippy::match_same_arms,
+        reason = "each arm is a deliberate per-variant tripwire so adding a TurnPhase variant fails the build until variant_count is updated"
+    )]
+    pub const fn variant_count() -> usize {
+        let probe = Self::ScrapFleets;
+        match probe {
+            Self::ScrapFleets => {}
+            Self::Waypoint0Unload => {}
+            Self::Waypoint0Colonize => {}
+            Self::Waypoint0Load => {}
+            Self::Waypoint0Other => {}
+            Self::MysteryTraderMove => {}
+            Self::PacketMove => {}
+            Self::WormholeEntryJiggle => {}
+            Self::FleetMovement => {}
+            Self::InnerStrengthGrowth => {}
+            Self::PacketSalvageDecay => {}
+            Self::WormholeExitJiggle => {}
+            Self::SdMinefieldDetonation => {}
+            Self::Mining => {}
+            Self::Production => {}
+            Self::SsSpyBonus => {}
+            Self::PopulationGrowth => {}
+            Self::LaunchedPacketDamage => {}
+            Self::RandomEvents => {}
+            Self::FleetBattles => {}
+            Self::MeetMysteryTrader => {}
+            Self::Bombing => {}
+            Self::Waypoint1Unload => {}
+            Self::Waypoint1Colonize => {}
+            Self::Waypoint1Load => {}
+            Self::MineLaying => {}
+            Self::FleetTransfer => {}
+            Self::Waypoint1FleetMerge => {}
+            Self::CaInstaforming => {}
+            Self::MinefieldDecay => {}
+            Self::MineSweeping => {}
+            Self::StarbaseFleetRepair => {}
+            Self::RemoteTerraforming => {}
+        }
+        // Hand-counted to match the arms above. Updating the enum
+        // forces updating both the `match` (above) and this constant.
+        33
+    }
+
     /// The canonical 33 turn phases in execution order. Any code that
     /// iterates phases must use this constant rather than hand-listing
     /// the variants, so a future phase reordering is a single edit.
@@ -1384,15 +1584,18 @@ mod tests {
         }
     }
 
-    /// New sniff test for the `HabAxis::range` constructor (not in the
-    /// legacy 19, but required by SNIFFTEST step 1 because we added a
-    /// public fallible function).
+    /// Sniff test for `HabAxis::range` covering all four guarded
+    /// conditions added by H5 hardening:
+    ///   - happy path (15..=85 normal Stars! window)
+    ///   - degenerate-but-legal single-click window
+    ///   - inverted: `min > max` (legacy check)
+    ///   - below 0 (H5 add)
+    ///   - above 100 (H5 add)
     ///
-    /// `HabAxis::range(min, max)` must return `Ok(Range { min, max })` on
-    /// a well-formed window and `Err(GameError::InvalidRace)` when
-    /// `min > max`.
+    /// All four error paths must return `GameError::InvalidRace` and
+    /// must not construct a value.
     #[test]
-    fn hab_axis_range_validates_ordering() {
+    fn hab_axis_range_validates_bounds_and_ordering() {
         // Happy path: normal Stars! 15–85 window.
         let ok = HabAxis::range(15, 85).expect("15..=85 is a valid window");
         assert_eq!(ok, HabAxis::Range { min: 15, max: 85 });
@@ -1401,12 +1604,70 @@ mod tests {
         let pinned = HabAxis::range(50, 50).expect("single-click window is legal");
         assert_eq!(pinned, HabAxis::Range { min: 50, max: 50 });
 
-        // Inverted: min > max must be rejected.
-        let bad = HabAxis::range(80, 20);
+        // Edge cases at the canonical boundaries.
+        let bottom = HabAxis::range(0, 0).expect("0..=0 is legal");
+        assert_eq!(bottom, HabAxis::Range { min: 0, max: 0 });
+        let top = HabAxis::range(100, 100).expect("100..=100 is legal");
+        assert_eq!(top, HabAxis::Range { min: 100, max: 100 });
+        let full = HabAxis::range(0, 100).expect("0..=100 is legal");
+        assert_eq!(full, HabAxis::Range { min: 0, max: 100 });
+
+        // Inverted: min > max.
+        let inverted = HabAxis::range(80, 20);
         assert!(
-            matches!(bad, Err(GameError::InvalidRace(_))),
-            "inverted window should error, got: {bad:?}"
+            matches!(inverted, Err(GameError::InvalidRace(_))),
+            "inverted window should error, got: {inverted:?}"
         );
+
+        // Below 0: H5 hardening rejection.
+        let too_low = HabAxis::range(-1, 50);
+        assert!(
+            matches!(too_low, Err(GameError::InvalidRace(_))),
+            "min < 0 should error, got: {too_low:?}"
+        );
+
+        // Above 100: H5 hardening rejection.
+        let too_high = HabAxis::range(50, 101);
+        assert!(
+            matches!(too_high, Err(GameError::InvalidRace(_))),
+            "max > 100 should error, got: {too_high:?}"
+        );
+    }
+
+    /// H5 hardening test: `MineralConcentrations::deplete` decrements
+    /// a single mineral atomically and refuses to underflow.
+    #[test]
+    fn mineral_concentrations_deplete_atomic_on_failure() {
+        let mut conc = MineralConcentrations::new(80, 60, 40);
+
+        // Happy path: spend 30 of ironium.
+        conc.deplete(MineralType::Ironium, 30)
+            .expect("80 - 30 should succeed");
+        assert_eq!(conc, MineralConcentrations::new(50, 60, 40));
+
+        // Underflow: try to spend 50 of germanium when we only have 40.
+        let before = conc;
+        let result = conc.deplete(MineralType::Germanium, 50);
+        assert!(
+            matches!(result, Err(GameError::InsufficientResources(_))),
+            "underflow must raise InsufficientResources, got: {result:?}"
+        );
+        assert_eq!(
+            conc, before,
+            "failed deplete must leave the struct unchanged"
+        );
+    }
+
+    /// H5 hardening test: `TurnPhase::variant_count` returns 33, matches
+    /// `CANONICAL_ORDER.len()`, and is enforced by exhaustive matching.
+    /// If a future variant is added to the enum without updating
+    /// `variant_count` AND `CANONICAL_ORDER`, the build fails before
+    /// this test ever runs — but if both are updated correctly, this
+    /// test confirms they agree.
+    #[test]
+    fn turn_phase_variant_count_matches_canonical_order_len() {
+        assert_eq!(TurnPhase::variant_count(), 33);
+        assert_eq!(TurnPhase::variant_count(), TurnPhase::CANONICAL_ORDER.len());
     }
 
     /// FR-19 port of the legacy `test_galaxy_size_target_stars`.
@@ -1570,14 +1831,19 @@ mod tests {
         assert!(!player.meets_requirements(&one_too_high));
     }
 
-    /// FR-19 port of the legacy `test_tech_levels_get_set`.
+    /// FR-19 port of the legacy `test_tech_levels_get_set`, adapted for
+    /// the H5 hardening that made `set` return `Result` with cap-30
+    /// enforcement.
     ///
     /// The `get`/`set` pair must address fields by name and leave the
-    /// other five untouched — no accidental cross-field writes.
+    /// other five untouched — no accidental cross-field writes — and
+    /// `set` must now succeed for any value at or below
+    /// [`TECH_LEVEL_CAP`].
     #[test]
     fn tech_levels_get_set_addresses_one_field() {
         let mut tech = TechLevels::default();
-        tech.set(TechField::Weapons, 7);
+        tech.set(TechField::Weapons, 7)
+            .expect("7 is well within the cap");
         assert_eq!(tech.get(TechField::Weapons), 7);
         // The other fields must still be at their default 0.
         assert_eq!(tech.get(TechField::Energy), 0);
@@ -1585,6 +1851,30 @@ mod tests {
         assert_eq!(tech.get(TechField::Construction), 0);
         assert_eq!(tech.get(TechField::Electronics), 0);
         assert_eq!(tech.get(TechField::Biotechnology), 0);
+    }
+
+    /// H5 hardening test (not in legacy 19): `TechLevels::set` enforces
+    /// the STARS 2026 [`TECH_LEVEL_CAP`] of 30. Values at or below the
+    /// cap succeed; values above raise [`GameError::InvalidRace`].
+    ///
+    /// This is a tripwire for the project's signature mechanical
+    /// deviation from Stars! 1995 canon (canon = 26, STARS 2026 = 30).
+    /// If the cap drifts, this test fails loudly.
+    #[test]
+    fn tech_levels_set_enforces_cap_30() {
+        let mut tech = TechLevels::default();
+        // Right at the cap is legal.
+        tech.set(TechField::Energy, 30)
+            .expect("30 is the cap, must be allowed");
+        assert_eq!(tech.get(TechField::Energy), 30);
+        // One above the cap is rejected.
+        let over = tech.set(TechField::Energy, 31);
+        assert!(
+            matches!(over, Err(GameError::InvalidRace(_))),
+            "31 must be rejected, got: {over:?}"
+        );
+        // The previous value must remain — atomic-on-failure.
+        assert_eq!(tech.get(TechField::Energy), 30);
     }
 
     /// FR-19 port of the legacy `test_research_allocation_normalize`.

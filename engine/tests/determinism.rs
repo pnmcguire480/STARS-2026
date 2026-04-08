@@ -1,0 +1,315 @@
+//! Cross-target determinism gate.
+//!
+//! This integration test exercises every public arithmetic and serialization
+//! path on the types defined in `engine/src/types.rs` against a fixed seed,
+//! collects the resulting bytes into a `Vec<u8>`, and asserts that the byte
+//! sequence matches a hand-pinned constant. The same test runs on both
+//! `wasm32-unknown-unknown` and native `x86_64`. If the constant ever
+//! diverges between targets, the wasm/native determinism contract is broken
+//! — and the failure is loud, immediate, and traceable to a single function.
+//!
+//! **Why this test exists:**
+//!
+//! The Phase 1 Crucible flagged a concrete failure mode (the "kill shot"
+//! scenario from the Red Teamer): atom 5 adds a procedural galaxy generator
+//! that calls `Position::distance_to` 10,000+ times per generation; on
+//! native it produces map seed 12345 → galaxy A; on wasm it produces 12345
+//! → galaxy A' (one star one light-year off due to FMA fusion or sqrt ULP
+//! drift). Multiplayer launches in v0.2 and the first turn desyncs because
+//! the two clients computed different fleet positions in the 47th decimal
+//! place. The 27 unit tests still pass — the divergence only manifests
+//! after compounding through three formulas. Two weeks of debugging end
+//! with `target-feature=-fma` and a determinism gate that should have
+//! shipped with `types.rs`.
+//!
+//! This is that gate. ADR-0002 captures the full rationale.
+//!
+//! **What this test does NOT cover:**
+//!
+//! - RNG determinism (deferred until the seeded RNG primitive lands in
+//!   `galaxy.rs` — the gate will be extended to cover it then).
+//! - Serde-level determinism for collections containing `BTreeMap` (no
+//!   such collections exist in `types.rs` yet — the test grows when they
+//!   land).
+//! - Actual cross-target *byte* equality between wasm and native — this
+//!   test runs the same computation on whichever target `cargo test`
+//!   targets, and the constant is pinned to whatever both targets produce.
+//!   If they diverge, ONE target's CI run will fail against the constant.
+//!
+//! **How to update the constant:**
+//!
+//! When a new public arithmetic path is added to `types.rs`, extend
+//! `compute_determinism_fingerprint` to exercise it, then run the test
+//! once on both targets, copy the new bytes into `EXPECTED_FINGERPRINT`,
+//! and commit. The constant must be IDENTICAL across targets — if it
+//! isn't, you have a real determinism bug, not a constant to update.
+
+use stars2026_engine::types::{
+    Cargo, Colonists, Cost, Environment, GalaxyDensity, GalaxySize, GameSettings, GameStatus,
+    HabAxis, MineralConcentrations, MineralType, Minerals, Position, ShipDesignId, StarId,
+    TechField, TechLevels, TurnPhase, VictoryCondition,
+};
+
+// Note: PrtId is intentionally not used in this test file. The H5
+// hardening pass made `PrtId.0` `pub(crate)`, which means integration
+// tests (compiled as a separate crate) cannot construct ids directly.
+// This is the intended protection: only the registry loader can mint
+// new ids. The determinism test will be extended to cover registry
+// round-trips when the registry atom lands.
+
+/// The pinned byte fingerprint of the deterministic-fingerprint computation
+/// below. This must be byte-identical across `wasm32-unknown-unknown` and
+/// native `x86_64` builds. If a new build of either target produces a
+/// different fingerprint, **do not update this constant** — investigate
+/// the divergence first. Likely culprits: FMA fusion in floating-point math,
+/// HashMap iteration order leaking in via a serde derive, or `f64` ops
+/// with non-IEEE-deterministic semantics (transcendentals).
+///
+/// To regenerate after a legitimate change to `compute_determinism_fingerprint`:
+///   1. Comment out the assertion in [`determinism_fingerprint_is_pinned`].
+///   2. Run `cargo test -p stars2026-engine --test determinism -- --nocapture`.
+///   3. Copy the printed bytes into this constant.
+///   4. Restore the assertion.
+///   5. Run again on the OTHER target and verify the same bytes are produced.
+const EXPECTED_FINGERPRINT: &[u8] = &[
+    0x7D, 0x00, 0x00, 0x00, 0xFA, 0x00, 0x00, 0x00, 0x3C, 0x00, 0x00, 0x00, 0x79, 0x01, 0x00, 0x00,
+    0xC7, 0x01, 0x00, 0x00, 0xB1, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40,
+    0x12, 0x29, 0xFB, 0x77, 0xBF, 0x95, 0x57, 0x40, 0xCB, 0x25, 0x1B, 0xF0, 0xF8, 0xA7, 0x66, 0x40,
+    0x10, 0x01, 0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x2D, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00,
+    0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x52, 0x61, 0x6E, 0x67, 0x65, 0x0F, 0x00,
+    0x00, 0x00, 0x55, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x7B, 0x22, 0x67, 0x61, 0x6C, 0x61, 0x78, 0x79, 0x5F, 0x73, 0x69, 0x7A, 0x65, 0x22, 0x3A,
+    0x22, 0x4D, 0x65, 0x64, 0x69, 0x75, 0x6D, 0x22, 0x2C, 0x22, 0x64, 0x65, 0x6E, 0x73, 0x69, 0x74,
+    0x79, 0x22, 0x3A, 0x22, 0x4E, 0x6F, 0x72, 0x6D, 0x61, 0x6C, 0x22, 0x2C, 0x22, 0x70, 0x6C, 0x61,
+    0x79, 0x65, 0x72, 0x5F, 0x63, 0x6F, 0x75, 0x6E, 0x74, 0x22, 0x3A, 0x34, 0x2C, 0x22, 0x73, 0x74,
+    0x61, 0x72, 0x74, 0x69, 0x6E, 0x67, 0x5F, 0x79, 0x65, 0x61, 0x72, 0x22, 0x3A, 0x32, 0x34, 0x30,
+    0x30, 0x2C, 0x22, 0x76, 0x69, 0x63, 0x74, 0x6F, 0x72, 0x79, 0x5F, 0x63, 0x6F, 0x6E, 0x64, 0x69,
+    0x74, 0x69, 0x6F, 0x6E, 0x73, 0x22, 0x3A, 0x5B, 0x7B, 0x22, 0x4F, 0x77, 0x6E, 0x50, 0x65, 0x72,
+    0x63, 0x65, 0x6E, 0x74, 0x4F, 0x66, 0x50, 0x6C, 0x61, 0x6E, 0x65, 0x74, 0x73, 0x22, 0x3A, 0x36,
+    0x30, 0x7D, 0x2C, 0x7B, 0x22, 0x48, 0x69, 0x67, 0x68, 0x65, 0x73, 0x74, 0x53, 0x63, 0x6F, 0x72,
+    0x65, 0x41, 0x66, 0x74, 0x65, 0x72, 0x54, 0x75, 0x72, 0x6E, 0x73, 0x22, 0x3A, 0x32, 0x30, 0x30,
+    0x7D, 0x5D, 0x2C, 0x22, 0x76, 0x69, 0x63, 0x74, 0x6F, 0x72, 0x79, 0x5F, 0x72, 0x65, 0x71, 0x75,
+    0x69, 0x72, 0x65, 0x6D, 0x65, 0x6E, 0x74, 0x73, 0x5F, 0x6D, 0x65, 0x74, 0x22, 0x3A, 0x31, 0x2C,
+    0x22, 0x61, 0x69, 0x5F, 0x64, 0x69, 0x66, 0x66, 0x69, 0x63, 0x75, 0x6C, 0x74, 0x79, 0x22, 0x3A,
+    0x22, 0x53, 0x74, 0x61, 0x6E, 0x64, 0x61, 0x72, 0x64, 0x22, 0x2C, 0x22, 0x72, 0x61, 0x6E, 0x64,
+    0x6F, 0x6D, 0x5F, 0x73, 0x65, 0x65, 0x64, 0x22, 0x3A, 0x31, 0x36, 0x30, 0x34, 0x35, 0x36, 0x39,
+    0x30, 0x39, 0x38, 0x34, 0x35, 0x30, 0x33, 0x31, 0x31, 0x31, 0x36, 0x39, 0x33, 0x7D, 0x21, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE8, 0x03,
+    0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x19, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x32, 0x00,
+    0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x07, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// Build a deterministic byte sequence by exercising every arithmetic and
+/// serialization path on `types.rs` that could plausibly produce
+/// target-divergent output. The output is the concatenation of:
+///
+///   1. `Minerals::add` of two fixed values, serialized via bincode
+///   2. `Minerals::spend` partial result, serialized via bincode
+///   3. `Position::distance_to` of three fixed point pairs, serialized
+///      as raw `f64` little-endian bytes
+///   4. `Colonists::checked_add` and `checked_sub` of fixed values
+///   5. `MineralConcentrations::deplete` result, serialized via bincode
+///   6. `TechLevels::meets_requirements` boolean for a fixed pair
+///   7. `HabAxis::range` happy and error paths
+///   8. `Cargo::total_mass` of a fixed cargo
+///   9. `GameSettings` JSON round-trip with a fixed seed
+///  10. `TurnPhase::variant_count` and `CANONICAL_ORDER.len()`
+///
+/// Every step uses only IEEE 754 basic ops, integer math, BTreeMap-free
+/// types, and explicit endianness for floats. No transcendentals, no
+/// hash-randomized iteration, no thread-locals.
+fn compute_determinism_fingerprint() -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::new();
+
+    // ─── 1. Minerals::add ───────────────────────────────────────────────
+    let mut minerals_a = Minerals::new(100, 200, 50);
+    minerals_a
+        .add(&Minerals::new(25, 50, 10))
+        .expect("fixed-value add must succeed");
+    bytes.extend_from_slice(
+        &bincode::serialize(&minerals_a).expect("Minerals serialization is deterministic"),
+    );
+
+    // ─── 2. Minerals::spend ────────────────────────────────────────────
+    let mut minerals_b = Minerals::new(500, 500, 500);
+    minerals_b
+        .spend(&Minerals::new(123, 45, 67))
+        .expect("fixed spend within budget");
+    bytes.extend_from_slice(
+        &bincode::serialize(&minerals_b).expect("Minerals serialization is deterministic"),
+    );
+
+    // ─── 3. Position::distance_to ──────────────────────────────────────
+    let pairs = [
+        (Position::new(0.0, 0.0), Position::new(3.0, 4.0)),
+        (Position::new(100.0, 200.0), Position::new(150.0, 280.0)),
+        (Position::new(-50.5, 75.25), Position::new(50.5, -75.25)),
+    ];
+    for (a, b) in pairs {
+        // Serialize as little-endian f64 bytes — IEEE 754 spec-defined
+        // representation, target-independent.
+        bytes.extend_from_slice(&a.distance_to(&b).to_le_bytes());
+    }
+
+    // ─── 4. Colonists checked arithmetic ───────────────────────────────
+    let pop = Colonists::new(250);
+    let after_growth = pop
+        .checked_add(Colonists::new(37))
+        .expect("250 + 37 must not overflow");
+    let after_loss = after_growth
+        .checked_sub(Colonists::new(15))
+        .expect("287 - 15 must not underflow");
+    bytes.extend_from_slice(&after_loss.units().to_le_bytes());
+
+    // ─── 5. MineralConcentrations::deplete ─────────────────────────────
+    let mut conc = MineralConcentrations::new(80, 60, 40);
+    conc.deplete(MineralType::Ironium, 30)
+        .expect("80 - 30 must succeed");
+    conc.deplete(MineralType::Boranium, 15)
+        .expect("60 - 15 must succeed");
+    bytes.extend_from_slice(
+        &bincode::serialize(&conc).expect("MineralConcentrations serialization is deterministic"),
+    );
+
+    // ─── 6. TechLevels::meets_requirements ─────────────────────────────
+    let mut player_tech = TechLevels::default();
+    player_tech
+        .set(TechField::Energy, 5)
+        .expect("5 is within cap");
+    player_tech
+        .set(TechField::Weapons, 3)
+        .expect("3 is within cap");
+    let req = TechLevels {
+        energy: 5,
+        weapons: 3,
+        propulsion: 0,
+        construction: 0,
+        electronics: 0,
+        biotechnology: 0,
+    };
+    bytes.push(u8::from(player_tech.meets_requirements(&req)));
+
+    // ─── 7. HabAxis::range happy and error paths ───────────────────────
+    let happy = HabAxis::range(15, 85).expect("canonical window");
+    bytes.extend_from_slice(&bincode::serialize(&happy).expect("HabAxis serialization"));
+    // Error path — encode the result as a single byte: 0 for Ok, 1 for Err.
+    bytes.push(u8::from(HabAxis::range(80, 20).is_err()));
+    bytes.push(u8::from(HabAxis::range(-1, 50).is_err()));
+    bytes.push(u8::from(HabAxis::range(50, 101).is_err()));
+
+    // ─── 8. Cargo::total_mass ──────────────────────────────────────────
+    let cargo = Cargo {
+        ironium: 100,
+        boranium: 50,
+        germanium: 25,
+        colonists: Colonists::new(10),
+    };
+    bytes.extend_from_slice(&cargo.total_mass().to_le_bytes());
+
+    // ─── 9. GameSettings JSON round-trip ───────────────────────────────
+    let settings = GameSettings {
+        galaxy_size: GalaxySize::Medium,
+        density: GalaxyDensity::Normal,
+        player_count: 4,
+        starting_year: 2400,
+        victory_conditions: vec![
+            VictoryCondition::OwnPercentOfPlanets(60),
+            VictoryCondition::HighestScoreAfterTurns(200),
+        ],
+        victory_requirements_met: 1,
+        ai_difficulty: stars2026_engine::types::AiDifficulty::Standard,
+        random_seed: 0xDEAD_BEEF_CAFE_F00D,
+    };
+    let json = serde_json::to_string(&settings).expect("GameSettings JSON serialization");
+    bytes.extend_from_slice(json.as_bytes());
+
+    // ─── 10. TurnPhase variant count ───────────────────────────────────
+    bytes.extend_from_slice(&(TurnPhase::variant_count() as u64).to_le_bytes());
+    bytes.extend_from_slice(&(TurnPhase::CANONICAL_ORDER.len() as u64).to_le_bytes());
+
+    // ─── 11. Cost construction (touches Minerals via routing) ──────────
+    let cost = Cost::new(1000, 50, 25, 10);
+    bytes.extend_from_slice(&bincode::serialize(&cost).expect("Cost serialization"));
+
+    // ─── 12. Environment + ID newtypes ─────────────────────────────────
+    let env = Environment {
+        gravity: 50,
+        temperature: 50,
+        radiation: 50,
+    };
+    bytes.extend_from_slice(&bincode::serialize(&env).expect("Environment serialization"));
+    let star_id = StarId(42);
+    bytes.extend_from_slice(&bincode::serialize(&star_id).expect("StarId serialization"));
+    let design_id = ShipDesignId(7);
+    bytes.extend_from_slice(&bincode::serialize(&design_id).expect("ShipDesignId serialization"));
+
+    // ─── 13. GameStatus default round-trip ─────────────────────────────
+    let status = GameStatus::default();
+    bytes.extend_from_slice(&bincode::serialize(&status).expect("GameStatus serialization"));
+
+    bytes
+}
+
+/// **Determinism gate test.** Computes a fingerprint of every public
+/// arithmetic and serialization path on `types.rs` and asserts the
+/// fingerprint matches the pinned constant. Run on both `wasm32` and
+/// native targets — divergence is a determinism bug.
+///
+/// On the FIRST run after extending `compute_determinism_fingerprint`,
+/// the constant will be empty and this assertion will fail with the
+/// new bytes printed. Copy them into `EXPECTED_FINGERPRINT` and re-run.
+#[test]
+fn determinism_fingerprint_is_pinned() {
+    let actual = compute_determinism_fingerprint();
+
+    // First-run mode: when the constant is empty, print the new bytes
+    // and fail loudly so the developer pins them. This avoids the
+    // hand-edit-then-re-run dance for the legitimate case where the
+    // fingerprint genuinely needs to change.
+    if EXPECTED_FINGERPRINT.is_empty() {
+        eprintln!("\n========================================");
+        eprintln!("DETERMINISM FINGERPRINT (paste into EXPECTED_FINGERPRINT):");
+        eprintln!("========================================");
+        eprintln!("&[");
+        for chunk in actual.chunks(16) {
+            let line: Vec<String> = chunk.iter().map(|b| format!("0x{b:02X}")).collect();
+            eprintln!("    {},", line.join(", "));
+        }
+        eprintln!("]");
+        eprintln!("========================================\n");
+        eprintln!("Length: {} bytes", actual.len());
+        panic!(
+            "EXPECTED_FINGERPRINT is empty — first run. Pin the bytes printed above and re-run."
+        );
+    }
+
+    assert_eq!(
+        actual, EXPECTED_FINGERPRINT,
+        "Determinism fingerprint mismatch. This is a CRITICAL failure: \
+         the engine produced different bytes than the pinned reference. \
+         Likely causes: (1) target-specific FP behavior (FMA fusion, ULP drift), \
+         (2) HashMap iteration order leaking through serde, (3) a non-deterministic \
+         Default impl. Investigate before updating the constant."
+    );
+}
+
+/// Quick smoke test that the fingerprint is non-empty and stable across
+/// two same-target runs. This catches the trivial failure mode where the
+/// computation accidentally varies on every call (e.g. an unseeded RNG
+/// or a `SystemTime::now` sneaking in).
+#[test]
+fn determinism_fingerprint_stable_across_runs() {
+    let first = compute_determinism_fingerprint();
+    let second = compute_determinism_fingerprint();
+    assert_eq!(
+        first, second,
+        "Fingerprint must be stable across two runs of the same target — \
+         if this fails, something in the computation is using ambient state \
+         (RNG, time, env) instead of fixed inputs."
+    );
+    assert!(
+        !first.is_empty(),
+        "Fingerprint must contain at least one byte"
+    );
+}

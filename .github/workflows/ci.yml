@@ -17,6 +17,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -29,17 +30,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Format check
-        run: cargo fmt --all -- --check
+      - name: Sniff test (single source of truth — runs scripts/sniff.sh)
+        run: bash scripts/sniff.sh --verbose
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Build
+      - name: Workspace build (catch broken dependents outside engine crate)
         run: cargo build --workspace --verbose
-
-      - name: Test
-        run: cargo test --workspace --verbose
 
   frontend:
     name: SvelteKit frontend
