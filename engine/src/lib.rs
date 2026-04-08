@@ -13,6 +13,7 @@
 // Phase 1 order: types → rng → galaxy → race → planet → tech → ship
 //              → fleet → combat → scanner → turn → ai
 
+pub mod rng;
 pub mod types;
 
 pub use types::GameError;
