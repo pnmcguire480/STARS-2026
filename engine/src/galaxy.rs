@@ -21,8 +21,8 @@
 //! Atom 2.2: star name registry + deterministic picker.
 //! Atom 2.3: `random_position` helper.
 //! Atom 2.4: `actual_star_count`.
-//! Atom 2.5 (this commit): `place_one_star` + `place_all_stars` (merged).
-//! Atom 2.6: Galaxy struct + `generate_galaxy` entry point (merged).
+//! Atom 2.5: `place_one_star` + `place_all_stars` (merged).
+//! Atom 2.6 (this commit): `Galaxy` struct + `generate_galaxy` entry point (merged).
 
 /// Canonical-flavored star name list for STARS 2026.
 ///
@@ -405,6 +405,107 @@ pub fn place_all_stars(
     Ok(stars)
 }
 
+/// A complete procedural galaxy: stars, the size and density that
+/// produced them, and the master seed for replay.
+///
+/// `Galaxy` is intentionally **minimal** — four fields and no methods
+/// beyond the `generate_galaxy` constructor. The First Principles
+/// council member specifically warned against a `GalaxyBuilder` fluent
+/// API or premature neighbor-query helpers; consumers (planet.rs,
+/// scanner.rs, …) will get those when they actually need them.
+///
+/// The struct lives in `galaxy.rs` rather than `types.rs` because it
+/// is the *return type of this module's only public entry point* —
+/// the Plan council member's rule of thumb for "aggregate root in its
+/// owning module, value types in the vocabulary file." `Star` itself
+/// (referenced by fleets, scanner, combat) lives in `types.rs`; the
+/// `Galaxy` wrapper does not.
+///
+/// **Why a wrapper at all instead of a bare `Vec<Star>`?** The seed
+/// and size are load-bearing metadata for the determinism replay
+/// contract — every consumer that wants to recompute "what galaxy is
+/// this?" needs them, and threading them as separate arguments
+/// alongside `Vec<Star>` everywhere would split the contract across
+/// multiple struct boundaries. The wrapper keeps the contract atomic.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Galaxy {
+    pub stars: Vec<crate::types::Star>,
+    pub size: crate::types::GalaxySize,
+    pub density: crate::types::GalaxyDensity,
+    pub seed: u64,
+}
+
+/// Per-density minimum spacing between stars in light-years, used by
+/// `generate_galaxy` to compute the rejection-sampling threshold for
+/// the entire galaxy.
+///
+/// **NOT the same as `GalaxySize::min_homeworld_distance`.** The
+/// homeworld distance applies to the homeworld-selection pass that
+/// `planet.rs` (Atom 3) will own; per-star spacing is much smaller.
+/// Per the Game Design council, Stars! 1995 canon uses spacings in
+/// the range of 3–8 light-years for individual stars. STARS 2026
+/// scales those values up modestly to suit our larger map dimensions
+/// while preserving the relative ordering across density tiers.
+///
+/// **Open question for Patrick (deferred to manual review):** are
+/// these the right values? They are *engine-tunable* knobs that the
+/// Atom 2.8 acceptance test will exercise across the full FR-1
+/// envelope; if the rejection sampler exhausts its budget, the
+/// constants here are the first thing to lower.
+const fn min_star_distance(density: crate::types::GalaxyDensity) -> f64 {
+    match density {
+        crate::types::GalaxyDensity::Sparse => 30.0,
+        crate::types::GalaxyDensity::Normal => 25.0,
+        crate::types::GalaxyDensity::Dense => 20.0,
+        crate::types::GalaxyDensity::Packed => 15.0,
+    }
+}
+
+/// Top-level galaxy generator.
+///
+/// Generates a complete `Galaxy` from a `GameSettings`, threading the
+/// master `random_seed` through `seeded_rng` with the `"galaxy"`
+/// subsystem tag. Same `GameSettings` → same `Galaxy`, byte-identical,
+/// forever.
+///
+/// # Algorithm
+///
+/// 1. Build a fresh `ChaCha20` RNG keyed on
+///    `(settings.random_seed, turn=0, PlayerId(0), "galaxy")`.
+/// 2. Compute the actual star count by jittering
+///    `settings.galaxy_size.target_stars()` against
+///    `settings.density`.
+/// 3. Place that many stars on a square map of side
+///    `settings.galaxy_size.map_dimension()`, using the per-density
+///    minimum spacing from `min_star_distance`.
+/// 4. Wrap the result in a `Galaxy`.
+///
+/// # Errors
+///
+/// Returns [`crate::types::GameError::GalaxyGenerationFailed`] when
+/// the rejection sampler exhausts its retry budget — typically because
+/// the chosen `(size, density)` combination cannot fit the requested
+/// star count within the per-density minimum spacing on the map.
+pub fn generate_galaxy(
+    settings: &crate::types::GameSettings,
+) -> Result<Galaxy, crate::types::GameError> {
+    use crate::rng::seeded_rng;
+    use crate::types::PlayerId;
+
+    let mut rng = seeded_rng(settings.random_seed, 0, PlayerId(0), "galaxy");
+    let count = actual_star_count(settings.galaxy_size, settings.density, &mut rng);
+    let dimension = settings.galaxy_size.map_dimension();
+    let min_distance = min_star_distance(settings.density);
+    let stars = place_all_stars(&mut rng, count, dimension, min_distance)?;
+
+    Ok(Galaxy {
+        stars,
+        size: settings.galaxy_size,
+        density: settings.density,
+        seed: settings.random_seed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,6 +753,71 @@ mod tests {
             assert_eq!(sa.name, sb.name);
             assert_eq!(sa.position.x.to_bits(), sb.position.x.to_bits());
             assert_eq!(sa.position.y.to_bits(), sb.position.y.to_bits());
+        }
+    }
+
+    fn tiny_normal_settings(seed: u64) -> crate::types::GameSettings {
+        crate::types::GameSettings {
+            galaxy_size: crate::types::GalaxySize::Tiny,
+            density: crate::types::GalaxyDensity::Normal,
+            player_count: 1,
+            starting_year: 2400,
+            victory_conditions: vec![],
+            victory_requirements_met: 1,
+            ai_difficulty: crate::types::AiDifficulty::Standard,
+            random_seed: seed,
+        }
+    }
+
+    #[test]
+    fn generate_galaxy_returns_populated_struct() {
+        let settings = tiny_normal_settings(0x00C0_FFEE);
+        let galaxy = generate_galaxy(&settings).expect("Tiny+Normal must generate");
+        assert!(!galaxy.stars.is_empty());
+        assert_eq!(galaxy.size, crate::types::GalaxySize::Tiny);
+        assert_eq!(galaxy.density, crate::types::GalaxyDensity::Normal);
+        assert_eq!(galaxy.seed, 0x00C0_FFEE);
+    }
+
+    #[test]
+    fn generate_galaxy_deterministic() {
+        let settings = tiny_normal_settings(123_456_789);
+        let g1 = generate_galaxy(&settings).unwrap();
+        let g2 = generate_galaxy(&settings).unwrap();
+        assert_eq!(g1.stars.len(), g2.stars.len());
+        for (a, b) in g1.stars.iter().zip(g2.stars.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.position.x.to_bits(), b.position.x.to_bits());
+            assert_eq!(a.position.y.to_bits(), b.position.y.to_bits());
+        }
+    }
+
+    #[test]
+    fn generate_galaxy_different_seeds_produce_different_galaxies() {
+        let g1 = generate_galaxy(&tiny_normal_settings(1)).unwrap();
+        let g2 = generate_galaxy(&tiny_normal_settings(2)).unwrap();
+        // Different seeds should not produce identical position vectors.
+        let positions_match = g1.stars.iter().zip(g2.stars.iter()).all(|(a, b)| {
+            a.position.x.to_bits() == b.position.x.to_bits()
+                && a.position.y.to_bits() == b.position.y.to_bits()
+        });
+        assert!(!positions_match, "two seeds produced identical galaxies");
+    }
+
+    #[test]
+    fn generate_galaxy_smoke_across_all_density_tiers() {
+        for density in [
+            crate::types::GalaxyDensity::Sparse,
+            crate::types::GalaxyDensity::Normal,
+            crate::types::GalaxyDensity::Dense,
+            crate::types::GalaxyDensity::Packed,
+        ] {
+            let mut settings = tiny_normal_settings(7777);
+            settings.density = density;
+            let galaxy = generate_galaxy(&settings)
+                .unwrap_or_else(|e| panic!("density {density:?} failed: {e}"));
+            assert!(!galaxy.stars.is_empty(), "density {density:?} empty");
         }
     }
 
