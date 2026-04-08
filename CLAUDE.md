@@ -52,7 +52,25 @@
 - **Files changed:** 2 in engine (`engine/src/types.rs` new, `engine/src/lib.rs` wired `pub mod types`) + governance sync (`CLAUDE.md`, `CONTEXT.md`). `.brainstormer/session.json` updated locally per the repo's brainstormer-stays-local pattern.
 - **Uncommitted changes:** 0 after both checkpoint commits.
 - **CodeGlass:** 0 decisions flagged, 0 patterns detected.
-- **Next session should start with:** **Tier 5 review** (Claude Opus chat) of the full `engine/src/types.rs` file before any further engine code lands — per AGENTS.md, foundational engine modules require Tier 5 sign-off. Bring the file, the SPEC FR-19 checklist (now 19/19), and the four governance memory files. After sign-off: one-atom SPEC.md update documenting the tech cap 30 deviation under FR-9 (per `project_tech_cap_30.md` memory). **Then** Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density-driven distribution, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council for Atom 2 = Rust + Plan + Performance Engineer. First function is the RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
+- **Next session should start with:** **Tier 5 review** (Claude Opus chat) of the full `engine/src/types.rs` file (now hardened by ADR-0002) AND the determinism gate at `engine/tests/determinism.rs`. Per AGENTS.md, foundational engine modules require Tier 5 sign-off. Bring the file, the FR-19 checklist (19/19), the four governance memory files, the new sniff-test feedback memory, and ADR-0001 + ADR-0002. After sign-off: one-atom SPEC.md update documenting the tech cap 30 deviation under FR-9 (per `project_tech_cap_30.md` memory). **Then** Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density-driven distribution, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council for Atom 2 = Rust + Plan + Performance Engineer. First function is the seeded-RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
+
+### Hardening pass (post-Phase-1-Task-1, pre-Atom-2)
+
+After Phase 1 Task 1 closed, Patrick authorized a multi-agent decision audit (the **Crucible** — six adversarial agents) and an automated testing-wall pass (**Paladin** — six-tier gauntlet). 21 findings surfaced; the scariest was that the wasm32-unknown-unknown target had never been compiled across 16 atoms of foundational engine code. Patrick chose **Option 1 — full hardening pass**.
+
+Nine hardening atoms shipped (commit `8b8f95f`, CI green on first push):
+
+- **H1** — wasm32 target installed; engine compiles to both targets; dual-target premise empirically true.
+- **H2** — CI matrix wires the wasm32 build step.
+- **H3** — `scripts/sniff.sh` is the **single source of truth**; CI runs it verbatim. Four mandatory gates: test, clippy, fmt, wasm32.
+- **H4** — `clippy.toml` encodes BTreeMap-not-HashMap via `disallowed-types`. Smoke-tested live and verified firing.
+- **H5** — Seven `types.rs` fixups: `MineralConcentrations::deplete`, `PrtId/LrtId pub(crate)` + `as_str()`, `TechLevels::set` Result + `TECH_LEVEL_CAP = 30`, `HabAxis::range` 0–100 validation, `Cargo::total_mass.units()`, `TurnPhase::variant_count` exhaustive-match tripwire, `GameSettings #[serde(default)]` everywhere except `random_seed`. 30 unit tests pass.
+- **H6** — Determinism gate at `engine/tests/determinism.rs`: 14 paths, 406-byte pinned fingerprint, same-target stability verified, compiles for wasm32. Cross-target byte equality deferred to wasm-bindgen-test atom.
+- **H7** — Mutation testing **DEFERRED**: cargo-mutants install failed on Windows-GNU; documented in `H7-mutation-testing-deferred.md` with 3 paths forward and 3 named test holes.
+- **H8** — `SNIFFTEST.md` references `scripts/sniff.sh` and lists all four gates with ADR provenance.
+- **H9** — `ADR-0002-hardening-pass-after-crucible.md` captures the full pass.
+
+**State after the hardening pass:** 32 tests (30 unit + 2 integration), 4 sniff gates run by script, HashMap banned at compile time, wasm32 verified on every push, sniff protocol = mechanical script with no parallel definition possible. Pattern name: **"Local-first verification, mechanically enforced."**
 
 ### What Works Right Now
 

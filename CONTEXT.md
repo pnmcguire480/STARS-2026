@@ -3,10 +3,10 @@
 > Updated every session. The fastest way to know "where are we right now."
 
 ## Now
-- **Date:** 2026-04-07
-- **Phase:** 1 — core engine vocabulary
-- **Active task:** **Phase 1 Task 1 COMPLETE.** `engine/src/types.rs` is the full type vocabulary required by SPEC FR-19 — 16 atoms shipped, 27 tests passing, FR-19 at **19/19**, clippy::pedantic clean. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
-- **Blocker:** None. Tier 5 review of `types.rs` is the next gate per AGENTS.md — foundational engine modules cannot begin their downstream dependents until Tier 5 signs off.
+- **Date:** 2026-04-08
+- **Phase:** 1 — core engine vocabulary, hardened
+- **Active task:** **Phase 1 Task 1 + hardening pass BOTH COMPLETE.** `engine/src/types.rs` shipped at 19/19 FR-19 (16 atoms), then hardened by ADR-0002 (9 more atoms: H1–H9) after a Crucible + Paladin audit surfaced 21 findings. Current state: 32 tests (30 unit + 2 integration), 4 sniff gates run via `scripts/sniff.sh` (CI uses same script verbatim), wasm32 verified on every push, HashMap banned at compile time, determinism fingerprint pinned at 406 bytes. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
+- **Blocker:** None. Tier 5 review of the hardened `types.rs` + `engine/tests/determinism.rs` is the next gate per AGENTS.md.
 
 ## Just Finished
 - Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.
@@ -30,10 +30,11 @@
 - 4 governance decisions locked and saved to persistent memory (see Decisions Log below).
 
 ## Next (in order)
-1. **Tier 5 review** of the full `engine/src/types.rs` file per AGENTS.md (Claude Opus chat). Foundational engine modules require Tier 5 sign-off before their downstream dependents begin. Bring the file, the FR-19 checklist, and the four governance memory files.
-2. One-atom update to `SPEC.md` documenting the tech cap 30 deviation with a callout under FR-9 (per `project_tech_cap_30.md` memory).
-3. Begin Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density curves, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council = Rust + Plan + Performance Engineer. First function = the RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
-4. Subsequent atoms per the Plan council's sequence: race (data-driven loader), planet mechanics, tech research, ship designer, fleet movement, combat, turn engine. Each with its own council summons.
+1. **Tier 5 review** of the hardened `engine/src/types.rs` AND `engine/tests/determinism.rs` per AGENTS.md (Claude Opus chat). Bring the files, the FR-19 checklist, all 5 governance memory files, and ADR-0001 + ADR-0002.
+2. One-atom update to `SPEC.md` documenting the tech cap 30 deviation with a callout under FR-9 (per `project_tech_cap_30.md` memory). The constant is now `pub const TECH_LEVEL_CAP: u32 = 30` in `types.rs` so the SPEC just needs the user-facing documentation.
+3. Resolve the H7 mutation-testing toolchain blocker via one of three documented paths (MSVC switch, MinGW binutils install, or Linux-CI-only `cargo-mutants` job). Then run the sweep on `types.rs` and address the three named test holes.
+4. Begin Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density curves, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council = Rust + Plan + Performance Engineer. First function = the RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
+5. Subsequent atoms per the Plan council's sequence: race (data-driven loader), planet mechanics, tech research, ship designer, fleet movement, combat, turn engine. Each with its own council summons.
 
 ## Open Questions (deferred to the atom that needs them)
 - **Tech cost curve for levels 27–30** — deferred until `tech.rs` lands. Options: extrapolate the canonical Stars! curve mathematically, hand-tune four levels, or lift from a community mod with attribution.
@@ -52,11 +53,18 @@
 - **2026-04-07:** Population and colonist cargo use a **`Colonists(u32)` newtype** where the inner value counts 100-colonist blocks, matching 1995 Stars! canon exactly. Prevents off-by-100 bugs at compile time. See `memory/project_colonists_newtype.md`.
 - **2026-04-07:** **Tech field cap is 30, not canon 26** — STARS 2026's signature mechanical deviation and its positioning differentiator vs every other Stars! clone. Extends late-game depth by four tiers; LRT/PRT bonuses can push further. Requires a SPEC.md callout atom, a FORMULAS.md cost-curve extension when `tech.rs` lands, and a README marketing bullet. See `memory/project_tech_cap_30.md`.
 - **2026-04-07:** PRT/LRT JSON schema **Option B** (flat effects table) approved — see the schema design captured in session notes. Single `data/prt_traits.json` file with `schema_version: 1`, 9 sections (identity, starting state, economy, research, terraforming, combat, stealth, infrastructure, exclusive content). LRTs use a parallel schema in `data/lrt_traits.json`.
+- **2026-04-08:** **Crucible + Paladin authorized + hardening pass executed** (Option 1). Six adversarial agents and the six-tier testing wall produced 21 findings. Nine hardening atoms (H1–H9) shipped in commit `8b8f95f`, CI green on first push. The structural upgrade: sniff-test discipline is now mechanically enforced via `scripts/sniff.sh` (single source of truth, run by both human and CI verbatim), `clippy.toml` bans HashMap at compile time, wasm32 target verified on every push, and a determinism gate (`engine/tests/determinism.rs`) pins a 406-byte fingerprint of 14 paths through `types.rs`. Pattern name: **"Local-first verification, mechanically enforced."** ADR-0002 captures the full pass; H7 (mutation testing) deferred with documented blocker. See `docs/codeglass/ADR-0002-hardening-pass-after-crucible.md` and `docs/codeglass/H7-mutation-testing-deferred.md`.
 
 ## Files Created This Phase
-- `SPEC.md`, `SCENARIOS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEGUIDE.md`, `ART.md`, `CONTEXT.md`, `SNIFFTEST.md`, `README.md`
+- `SPEC.md`, `SCENARIOS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEGUIDE.md`, `ART.md`, `CONTEXT.md`, `SNIFFTEST.md` (updated by H8), `README.md`
 - `brainstormer/angles.md`, `brainstormer/hooks.md`, `brainstormer/ruleset.md`
 - `Cargo.toml`, `engine/Cargo.toml`, `engine/src/lib.rs`
-- **`engine/src/types.rs`** (new this session, ~1300 lines, 24 tests + 1 sentinel, clippy pedantic clean)
+- **`engine/src/types.rs`** (~1900 lines after H5 hardening, 30 unit tests, clippy pedantic clean)
+- **`engine/tests/determinism.rs`** (new in H6, 2 integration tests, 406-byte pinned fingerprint)
+- **`scripts/sniff.sh`** (new in H3, single source of truth for sniff test, runs in CI verbatim)
+- **`clippy.toml`** (new in H4, encodes BTreeMap-not-HashMap rule as compile error)
+- **`docs/codeglass/ADR-0001-sniff-test-includes-cargo-fmt.md`** (lessons-learned from CI fmt failure)
+- **`docs/codeglass/ADR-0002-hardening-pass-after-crucible.md`** (umbrella ADR for the hardening pass)
+- **`docs/codeglass/H7-mutation-testing-deferred.md`** (documented gap with 3 paths forward)
 - `frontend/` (via SvelteKit installer)
 - `.gitignore`
