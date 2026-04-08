@@ -48,6 +48,18 @@ pub enum GameError {
     /// so tests and UI can disambiguate without parsing the display string.
     #[error("insufficient resources in {0}")]
     InsufficientResources(&'static str),
+
+    /// Procedural galaxy generation could not satisfy the requested
+    /// constraints — typically because the rejection sampler exhausted
+    /// its retry budget without finding a valid placement (density too
+    /// high for the requested star count, or `min_homeworld_distance`
+    /// too large for the map dimension). The payload names the failing
+    /// stage (e.g. `"place_one_star: retry budget exhausted"`) so the
+    /// `SvelteKit` layer can surface an actionable message instead of a
+    /// stack trace. Same seed → same failure, per the determinism
+    /// contract.
+    #[error("galaxy generation failed: {0}")]
+    GalaxyGenerationFailed(&'static str),
 }
 
 // =============================================================================

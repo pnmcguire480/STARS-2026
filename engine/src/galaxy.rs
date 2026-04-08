@@ -20,8 +20,8 @@
 //!
 //! Atom 2.2: star name registry + deterministic picker.
 //! Atom 2.3: `random_position` helper.
-//! Atom 2.4 (this commit): `actual_star_count`.
-//! Atom 2.5: `place_one_star` + `place_all_stars` (merged).
+//! Atom 2.4: `actual_star_count`.
+//! Atom 2.5 (this commit): `place_one_star` + `place_all_stars` (merged).
 //! Atom 2.6: Galaxy struct + `generate_galaxy` entry point (merged).
 
 /// Canonical-flavored star name list for STARS 2026.
@@ -275,6 +275,136 @@ pub fn actual_star_count(
     result
 }
 
+/// Per-star retry budget for the rejection sampler. The Rust council
+/// recommended this be a tuning constant in galaxy.rs rather than a
+/// caller-facing parameter — it's a knob, not a feature. 100 attempts
+/// is comfortable for any reasonable `(count, dimension, min_distance)`
+/// triple a Tiny galaxy will produce; the FR-1 acceptance test (Atom
+/// 2.8) verifies the budget is never exceeded for the canonical
+/// `(GalaxySize::Tiny, GalaxyDensity::Normal)` configuration.
+pub(crate) const STAR_PLACEMENT_ATTEMPTS: u32 = 100;
+
+/// Place a single star into an existing accepted-positions list using
+/// integer rejection sampling.
+///
+/// Draws candidate positions from `random_position` and accepts the
+/// first one whose squared distance from every existing position is
+/// at least `min_distance_squared`. Returns
+/// [`GameError::GalaxyGenerationFailed`] if the retry budget runs out.
+///
+/// # Why squared distances
+///
+/// Comparing `dx*dx + dy*dy` against `min_distance * min_distance`
+/// avoids `sqrt` entirely. Both sides of the comparison are computed
+/// in `i64` from `i32` axis differences, so the entire hot path is
+/// exact integer arithmetic — byte-identical between wasm32 and native
+/// regardless of the float environment. The Performance Engineer
+/// council member flagged this as the single most important
+/// determinism win available in Atom 2.
+///
+/// `existing` is a `&[crate::types::Position]` slice rather than a
+/// `&Galaxy` so this function can be unit-tested in isolation without
+/// constructing the higher-level Galaxy struct (Atom 2.6).
+fn place_one_star(
+    rng: &mut rand_chacha::ChaCha20Rng,
+    existing: &[crate::types::Position],
+    dimension: u32,
+    min_distance_squared: i64,
+) -> Result<crate::types::Position, crate::types::GameError> {
+    for _ in 0..STAR_PLACEMENT_ATTEMPTS {
+        let candidate = random_position(rng, dimension);
+        if existing
+            .iter()
+            .all(|p| squared_distance(p, &candidate) >= min_distance_squared)
+        {
+            return Ok(candidate);
+        }
+    }
+    Err(crate::types::GameError::GalaxyGenerationFailed(
+        "place_one_star: retry budget exhausted (density too high or map too small)",
+    ))
+}
+
+/// Squared distance between two integer-valued positions, computed in
+/// `i64` so the multiplication never overflows for any
+/// `Position` produced by `random_position` (worst case
+/// `1600 * 1600 + 1600 * 1600 = 5_120_000`, well within `i64`).
+///
+/// The `f64 → i64` casts are exact: every position this engine
+/// produces is integer-valued (see [`random_position`]), so the
+/// truncating cast loses no information. The cast lint is silenced
+/// locally with a justifying comment per the project policy on
+/// `#[allow]`.
+fn squared_distance(a: &crate::types::Position, b: &crate::types::Position) -> i64 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Position values produced by random_position are integer-valued f64s; truncation is lossless"
+    )]
+    let dx = (a.x - b.x) as i64;
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Position values produced by random_position are integer-valued f64s; truncation is lossless"
+    )]
+    let dy = (a.y - b.y) as i64;
+    dx * dx + dy * dy
+}
+
+/// Place `count` stars into a fresh `Vec<Star>`, assigning sequential
+/// `StarId`s and drawing names from `pick_star_name`.
+///
+/// Pre-allocates both the accepted-positions scratch and the final
+/// `Vec<Star>` with `Vec::with_capacity(count)` per the Performance
+/// Engineer council's guidance — zero heap traffic per rejection,
+/// exactly two allocations for the entire generation.
+///
+/// `min_distance` is taken as `f64` (matching
+/// `GalaxySize::min_homeworld_distance`) and squared once at the top
+/// of the function so the inner loop sees only `i64`. The `f64 → i64`
+/// cast is exact for every defined `GalaxySize` (max distance is 200,
+/// which is well within `i64`).
+///
+/// # Errors
+///
+/// Returns [`crate::types::GameError::GalaxyGenerationFailed`] when the
+/// rejection sampler exhausts its per-star retry budget — typically
+/// because the requested `count` is too high for the supplied
+/// `dimension` and `min_distance` to fit without overlap.
+pub fn place_all_stars(
+    rng: &mut rand_chacha::ChaCha20Rng,
+    count: u32,
+    dimension: u32,
+    min_distance: f64,
+) -> Result<Vec<crate::types::Star>, crate::types::GameError> {
+    use crate::types::{Star, StarId};
+
+    // Squared-distance threshold computed once. The cast is exact
+    // because every GalaxySize::min_homeworld_distance is integer-valued.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "min_distance is integer-valued (GalaxySize const fn); cast is lossless"
+    )]
+    let min_dist_i64 = min_distance as i64;
+    let min_distance_squared = min_dist_i64 * min_dist_i64;
+
+    let count_usize = count as usize;
+    let mut positions: Vec<crate::types::Position> = Vec::with_capacity(count_usize);
+    let mut stars: Vec<Star> = Vec::with_capacity(count_usize);
+
+    for i in 0..count {
+        let pos = place_one_star(rng, &positions, dimension, min_distance_squared)?;
+        positions.push(pos);
+        let name = pick_star_name(rng, i);
+        stars.push(Star {
+            id: StarId(i),
+            name,
+            position: pos,
+            planets: Vec::new(),
+        });
+    }
+
+    Ok(stars)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,6 +578,80 @@ mod tests {
                 &mut rng,
             );
             assert!(count >= 1, "seed {seed} produced zero stars");
+        }
+    }
+
+    #[test]
+    fn place_one_star_finds_position_in_empty_field() {
+        let mut rng = seeded_rng(1, 0, PlayerId(0), "galaxy");
+        let pos = place_one_star(&mut rng, &[], 400, 80 * 80)
+            .expect("first placement in empty field must succeed");
+        assert!(pos.x >= 0.0 && pos.x < 400.0);
+        assert!(pos.y >= 0.0 && pos.y < 400.0);
+    }
+
+    #[test]
+    fn place_one_star_respects_minimum_distance() {
+        let mut rng = seeded_rng(2, 0, PlayerId(0), "galaxy");
+        let existing = vec![crate::types::Position::new(200.0, 200.0)];
+        for _ in 0..20 {
+            let p = place_one_star(&mut rng, &existing, 400, 6400)
+                .expect("sparse field should always succeed");
+            let d2 = squared_distance(&existing[0], &p);
+            assert!(d2 >= 6400, "placement at {p:?} too close, d²={d2}");
+        }
+    }
+
+    #[test]
+    fn place_one_star_exhausts_budget_on_impossible_density() {
+        let mut rng = seeded_rng(3, 0, PlayerId(0), "galaxy");
+        let existing = vec![crate::types::Position::new(25.0, 25.0)];
+        let result = place_one_star(&mut rng, &existing, 50, 200 * 200);
+        assert!(matches!(
+            result,
+            Err(crate::types::GameError::GalaxyGenerationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn place_all_stars_produces_correct_count_and_unique_ids() {
+        let mut rng = seeded_rng(42, 0, PlayerId(0), "galaxy");
+        let stars =
+            place_all_stars(&mut rng, 32, 400, 30.0).expect("Tiny galaxy must place 32 stars");
+        assert_eq!(stars.len(), 32);
+        for (i, s) in stars.iter().enumerate() {
+            assert_eq!(s.id.0 as usize, i);
+        }
+    }
+
+    #[test]
+    fn place_all_stars_pairwise_distance_constraint() {
+        let mut rng = seeded_rng(99, 0, PlayerId(0), "galaxy");
+        let stars = place_all_stars(&mut rng, 32, 400, 30.0).expect("Tiny galaxy must succeed");
+        let min_d2: i64 = 30 * 30;
+        for i in 0..stars.len() {
+            for j in (i + 1)..stars.len() {
+                let d2 = squared_distance(&stars[i].position, &stars[j].position);
+                assert!(
+                    d2 >= min_d2,
+                    "stars {i} and {j} too close, d²={d2}, min²={min_d2}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn place_all_stars_deterministic() {
+        let mut a = seeded_rng(7, 0, PlayerId(0), "galaxy");
+        let mut b = seeded_rng(7, 0, PlayerId(0), "galaxy");
+        let stars_a = place_all_stars(&mut a, 16, 400, 30.0).unwrap();
+        let stars_b = place_all_stars(&mut b, 16, 400, 30.0).unwrap();
+        assert_eq!(stars_a.len(), stars_b.len());
+        for (sa, sb) in stars_a.iter().zip(stars_b.iter()) {
+            assert_eq!(sa.id, sb.id);
+            assert_eq!(sa.name, sb.name);
+            assert_eq!(sa.position.x.to_bits(), sb.position.x.to_bits());
+            assert_eq!(sa.position.y.to_bits(), sb.position.y.to_bits());
         }
     }
 
