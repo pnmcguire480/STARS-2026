@@ -3,9 +3,10 @@
 > Updated every session. The fastest way to know "where are we right now."
 
 ## Now
-- **Date:** 2026-04-08
-- **Phase:** 1 — core engine vocabulary, hardened
-- **Active task:** **Phase 1 Task 1 + hardening pass BOTH COMPLETE.** `engine/src/types.rs` shipped at 19/19 FR-19 (16 atoms), then hardened by ADR-0002 (9 more atoms: H1–H9) after a Crucible + Paladin audit surfaced 21 findings. Current state: 32 tests (30 unit + 2 integration), 4 sniff gates run via `scripts/sniff.sh` (CI uses same script verbatim), wasm32 verified on every push, HashMap banned at compile time, determinism fingerprint pinned at 406 bytes. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
+- **Date:** 2026-04-08 (autonomous-mode session in progress)
+- **Phase:** 1 — Atom 2 (`engine/src/galaxy.rs`) underway, autonomous mode
+- **Active task:** **Atom 2 in progress — 4 of 8 atoms shipped (2.1–2.4).** rng.rs primitive landed, galaxy.rs has the name registry, random_position, and density-jittered actual_star_count. 51 unit + 2 integration tests pass, sniff green at every push, CI green. Sync milestone reached after 2.4 per the council-revised cadence. Next: 2.5 (place_one_star + place_all_stars merged), 2.6 (Galaxy struct + generate_galaxy merged), 2.7 (extend determinism fingerprint), 2.8 (FR-1 acceptance test), then closing Paladin + Crucible.
+- **Active task (frozen, pre-Atom-2 plan):** **Phase 1 Task 1 + hardening pass BOTH COMPLETE.** `engine/src/types.rs` shipped at 19/19 FR-19 (16 atoms), then hardened by ADR-0002 (9 more atoms: H1–H9) after a Crucible + Paladin audit surfaced 21 findings. Current state: 32 tests (30 unit + 2 integration), 4 sniff gates run via `scripts/sniff.sh` (CI uses same script verbatim), wasm32 verified on every push, HashMap banned at compile time, determinism fingerprint pinned at 406 bytes. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
 - **Blocker:** None. Tier 5 review of the hardened `types.rs` + `engine/tests/determinism.rs` is the next gate per AGENTS.md.
 
 ## Just Finished

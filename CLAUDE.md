@@ -33,6 +33,18 @@
 
 ### Last Session
 
+- **Date:** 2026-04-08 (autonomous-mode Atom 2 run, in progress)
+- **Phase:** 1 — Atom 2 `engine/src/galaxy.rs`, 4 of 8 atoms shipped
+- **Autonomous Atom 2 progress (most-recent first):**
+  - **2.4 — `actual_star_count` (commit a38edd5):** density-jittered integer math, 4 unit tests, [-10%, +10%] jitter, clamped ≥1. Open question: Tiny+Normal lower bound 29 vs SPEC FR-1 floor of 32 — left for the Atom 2.8 acceptance test to decide.
+  - **2.3 — `random_position` (commit d4701ca):** integer-grid placement via `gen_range`, lossless `u32→f64`, no sqrt, deterministic. Stray files swept in by `git add -A` (.brainstormer/session.json + reference/social-launch-drafts.md) — switched to targeted `git add` going forward, will note in wake-up report.
+  - **2.2 — galaxy.rs star name registry + picker (commit 43c316a):** 50 hand-curated names, deterministic picker with `-N` rotation suffix. Game Design's JSON-list recommendation deferred; First Principles' "no names at all" overruled because `Star.name` is non-optional.
+  - **2.1 — `engine/src/rng.rs` seeded_rng (commit c2821a8):** ChaCha20Rng + hand-rolled FNV-1a domain separation, 9 unit tests. Council unanimous: rng lives in its own module, not at top of galaxy.rs.
+- **Council outcome:** 5-agent round table (Rust + Plan + Performance Engineer + Game Design + First Principles) ran in parallel before any code was written. Convergence: rng.rs as own module; ChaCha20Rng seeded once + threaded `&mut`; pre-allocated Vecs with capacity; manual rejection loop with const retry budget; **squared i64 distances (no sqrt)** — Performance Engineer's most important call, eliminates the FMA / ULP-drift cross-target bug class entirely; merge atoms 2.5+2.6 and 2.7+2.8 → 8-atom sequence (down from 10).
+- **Current state:** 51 unit + 2 integration tests pass, sniff green at every push, CI green on commit a38edd5. Sync milestone reached after 2.4 per council-revised cadence. Next: 2.5 (place_one_star + place_all_stars merged), 2.6 (Galaxy struct + generate_galaxy merged), 2.7 (extend determinism fingerprint), 2.8 (FR-1 acceptance test), then closing Paladin + Crucible per the brief Step 5.
+
+#### Frozen prior session block
+
 - **Date:** 2026-04-07
 - **Phase:** 1 — core engine vocabulary
 - **Active task:** **Phase 1 Task 1 COMPLETE** — `engine/src/types.rs` is the full type vocabulary required by SPEC FR-19.
