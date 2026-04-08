@@ -12,17 +12,16 @@
 //! envelope, and no rejection-sampler explosions across a wide
 //! cross-section of seeds.
 //!
-//! **Calibration note (open question for Patrick):**
+//! **Calibration note (resolved by Atom 2.9):**
 //!
-//! The current `actual_star_count` jitter window (`±10%` from the
-//! `GalaxySize::Tiny.target_stars()` base of 32) produces counts in
-//! `[29, 35]`, which is *below* the SPEC's stated FR-1 floor of 32 in
-//! the worst case. The Atom 2.4 commit message flagged this as a
-//! deferred decision; this acceptance test asserts the wider envelope
-//! `[1, 100]` for now and includes a tighter `[29, 35]` observation
-//! check that documents the actual range so Patrick can decide whether
-//! to (a) raise the base, (b) narrow the jitter, (c) add a hard floor
-//! at 32, or (d) update SPEC FR-1 to match what the engine produces.
+//! The original Atom 2.4 jitter was symmetric `[-10, +10]` percent,
+//! which produced worst-case 29 stars on Tiny+Normal — below SPEC
+//! FR-1's stated floor of 32. The Atom 2 closing Crucible flagged
+//! this as a P0 SPEC violation. Atom 2.9 changed the jitter to
+//! `[0, +20]` so `actual_star_count` is always `>= base *
+//! density_scale / 100`. For Tiny+Normal that bottoms out at exactly
+//! 32, hitting the SPEC FR-1 floor on every seed. This test asserts
+//! the SPEC envelope `[32, 100]` directly.
 
 use stars2026_engine::galaxy::generate_galaxy;
 use stars2026_engine::types::{AiDifficulty, GalaxyDensity, GalaxySize, GameSettings};
@@ -41,8 +40,8 @@ fn tiny_normal_settings(seed: u64) -> GameSettings {
 }
 
 /// FR-1 envelope: every Tiny+Normal galaxy across 100 seeds must
-/// produce a star count inside `[1, 100]` (the wider acceptable
-/// envelope) and the placement pipeline must never return an error.
+/// produce a star count inside the SPEC FR-1 envelope `[32, 100]`,
+/// and the placement pipeline must never return an error.
 #[test]
 fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
     for seed in 0..100u64 {
@@ -51,8 +50,8 @@ fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
             .unwrap_or_else(|e| panic!("FR-1 seed {seed} failed to generate: {e}"));
         let n = galaxy.stars.len();
         assert!(
-            (1..=100).contains(&n),
-            "FR-1 envelope violation: seed {seed} produced {n} stars (expected 1..=100)"
+            (32..=100).contains(&n),
+            "FR-1 envelope violation: seed {seed} produced {n} stars (expected 32..=100 per SPEC FR-1)"
         );
     }
 }

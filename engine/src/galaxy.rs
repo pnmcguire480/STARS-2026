@@ -215,8 +215,15 @@ pub fn random_position(
 ///    - `Dense`   → 130 (+30%)
 ///    - `Packed`  → 160 (+60%)
 /// 3. `scaled = base * density_scale / 100`.
-/// 4. `jitter` is a uniform integer in `[-10, +10]` percent of `scaled`,
-///    drawn from one `u64` of the supplied RNG.
+/// 4. `jitter` is a uniform integer in `[0, +20]` **percent** of `scaled`,
+///    drawn from one `u64` of the supplied RNG. The lower bound is 0
+///    (not negative) so the generator never produces fewer stars than
+///    `base * density_scale / 100` — this is what makes the SPEC FR-1
+///    floor of 32 stars hold for `(Tiny, Normal)` deterministically
+///    across every seed. The Atom 2 closing Crucible flagged the
+///    earlier symmetric `[-10, +10]` jitter as a SPEC FR-1 violation
+///    (worst case 29 stars vs SPEC floor of 32); this asymmetric form
+///    is the in-session P0 fix.
 /// 5. The final value is clamped to `[1, u32::MAX]` to guarantee at
 ///    least one star regardless of how aggressively the inputs scale
 ///    downward.
@@ -233,6 +240,13 @@ pub fn random_position(
 /// returns 32 to match SPEC FR-1 ("32–100 stars for v0.1"). This atom
 /// honors the SPEC value; reconciling the SPEC and the canon is a
 /// deferred question for Patrick.
+///
+/// **Asymmetric jitter (Atom 2.9 P0 fix):** the closing Crucible
+/// surfaced that an earlier symmetric `[-10, +10]` jitter could
+/// produce 29 stars on a worst-case seed, below the SPEC FR-1 floor
+/// of 32. The jitter is now `[0, +20]` so `actual_star_count` is
+/// always `>= base * density_scale / 100`. For `(Tiny, Normal)` that
+/// is `32 * 100 / 100 = 32`, hitting the SPEC floor on every seed.
 #[must_use]
 pub fn actual_star_count(
     size: crate::types::GalaxySize,
@@ -254,12 +268,14 @@ pub fn actual_star_count(
     // GalaxySize (Huge.target_stars() = 600, * 160 = 96_000).
     let scaled = base.saturating_mul(density_scale) / 100;
 
-    // Jitter is in [-10%, +10%] of `scaled`, drawn from one i32-shaped
-    // window. We sample on a 21-step inclusive interval [-10..=10],
+    // Jitter is in [0%, +20%] of `scaled`, drawn from one i32-shaped
+    // window. We sample on a 21-step inclusive interval [0..=20],
     // multiply by `scaled / 100`, and add. Doing the math entirely in
-    // i64 keeps the arithmetic deterministic and prevents the rare
-    // edge case where a maximum-negative jitter underflows u32.
-    let jitter_pct: i64 = rng.gen_range(-10..=10);
+    // i64 keeps the arithmetic deterministic. The asymmetric form is
+    // the Atom 2.9 P0 fix that guarantees the SPEC FR-1 floor — see
+    // the doc comment above for the Crucible finding that motivated
+    // this change.
+    let jitter_pct: i64 = rng.gen_range(0..=20);
     let scaled_i = i64::from(scaled);
     let delta = scaled_i * jitter_pct / 100;
     let jittered = scaled_i + delta;
@@ -599,15 +615,10 @@ mod tests {
     #[test]
     fn actual_star_count_tiny_normal_satisfies_fr1() {
         // FR-1 says v0.1 ships with "32–100 stars (Tiny size)". With
-        // Normal density and ±10% jitter on a 32-star base, the count
-        // sits in [29, 35]. The `<= 100` half of FR-1 is trivially
-        // satisfied; the lower bound of 29 is below the SPEC's stated
-        // 32 — this is the deferred-question case noted in the
-        // actual_star_count doc comment. We assert the WIDER acceptable
-        // interval here and let the FR-1 acceptance integration test
-        // (Atom 2.8) decide whether the lower bound needs tightening
-        // (e.g. by raising the base, narrowing the jitter, or
-        // constraining the floor).
+        // Normal density and the asymmetric [0, +20] jitter on a
+        // 32-star base, the count sits in [32, 38]. The Atom 2.9 P0
+        // fix changed the jitter from symmetric [-10, +10] to honor
+        // the SPEC floor on every seed.
         for seed in 0..100u64 {
             let mut rng = seeded_rng(seed, 0, PlayerId(0), "galaxy");
             let count = actual_star_count(
@@ -616,8 +627,8 @@ mod tests {
                 &mut rng,
             );
             assert!(
-                (1..=100).contains(&count),
-                "Tiny+Normal seed {seed} produced {count}, outside [1, 100]"
+                (32..=100).contains(&count),
+                "Tiny+Normal seed {seed} produced {count}, outside SPEC FR-1 [32, 100]"
             );
         }
     }
