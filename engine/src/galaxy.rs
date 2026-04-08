@@ -18,8 +18,8 @@
 //!
 //! # Module growth plan
 //!
-//! Atom 2.2 (this commit): star name registry + deterministic picker.
-//! Atom 2.3: `random_position` helper.
+//! Atom 2.2: star name registry + deterministic picker.
+//! Atom 2.3 (this commit): `random_position` helper.
 //! Atom 2.4: `actual_star_count`.
 //! Atom 2.5: `place_one_star` + `place_all_stars` (merged).
 //! Atom 2.6: Galaxy struct + `generate_galaxy` entry point (merged).
@@ -163,6 +163,45 @@ pub fn pick_star_name(rng: &mut rand_chacha::ChaCha20Rng, pick_index: u32) -> St
     }
 }
 
+/// Pick a uniformly random integer-valued position inside the square map
+/// `[0, dimension) × [0, dimension)`.
+///
+/// Returns a [`Position`] whose `x` and `y` are integer-valued `f64`s
+/// drawn from the supplied `ChaCha20Rng`. Integer placement (rather
+/// than continuous `f64` sampling) is deliberate: the rejection-sampling
+/// hot path in [`place_one_star`] (Atom 2.5) compares squared distances
+/// using an `i64` accumulator, which is byte-identical between wasm32
+/// and native. Continuous `f64` sampling would re-introduce the FMA /
+/// ULP-drift class of cross-target bugs the determinism fingerprint
+/// exists to catch.
+///
+/// The `u32 → f64` casts are mathematically lossless for any `dimension`
+/// up to `2^53`, which exceeds every `GalaxySize::map_dimension()`
+/// return value by ~13 orders of magnitude.
+///
+/// # Determinism
+///
+/// Same `(rng_state, dimension)` → same returned `Position`. Two `u64`
+/// draws are consumed per call (one per axis) so the fingerprint stays
+/// predictable.
+///
+/// [`Position`]: crate::types::Position
+/// [`place_one_star`]: self
+#[must_use]
+pub fn random_position(
+    rng: &mut rand_chacha::ChaCha20Rng,
+    dimension: u32,
+) -> crate::types::Position {
+    use rand::Rng;
+
+    // gen_range with an exclusive upper bound returns a uniform integer
+    // in `[0, dimension)`. Both axes are drawn from the same RNG so the
+    // stream advances by exactly two u64s per call.
+    let x: u32 = rng.gen_range(0..dimension);
+    let y: u32 = rng.gen_range(0..dimension);
+    crate::types::Position::new(f64::from(x), f64::from(y))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,6 +256,40 @@ mod tests {
             name.ends_with("-3"),
             "third-rotation name must end in -3, got {name}"
         );
+    }
+
+    #[test]
+    fn random_position_within_bounds() {
+        // 1000 draws against a small dimension; every coordinate must
+        // sit inside `[0.0, dimension as f64)` on both axes.
+        let mut rng = seeded_rng(99, 0, PlayerId(0), "galaxy");
+        let dim: u32 = 400;
+        let dim_f = f64::from(dim);
+        for _ in 0..1000 {
+            let p = random_position(&mut rng, dim);
+            assert!(p.x >= 0.0 && p.x < dim_f, "x out of bounds: {}", p.x);
+            assert!(p.y >= 0.0 && p.y < dim_f, "y out of bounds: {}", p.y);
+            // Integer-valued check: fract() must be bit-exactly 0.0.
+            // Compared via to_bits() to satisfy clippy::float_cmp; bit
+            // equality is the right test for "produced by an integer
+            // cast" anyway.
+            assert_eq!(p.x.fract().to_bits(), 0.0_f64.to_bits());
+            assert_eq!(p.y.fract().to_bits(), 0.0_f64.to_bits());
+        }
+    }
+
+    #[test]
+    fn random_position_deterministic() {
+        let mut a = seeded_rng(123, 0, PlayerId(0), "galaxy");
+        let mut b = seeded_rng(123, 0, PlayerId(0), "galaxy");
+        for _ in 0..50 {
+            let pa = random_position(&mut a, 800);
+            let pb = random_position(&mut b, 800);
+            // Bit equality — the determinism contract is byte-identical
+            // floats, not approximate equality.
+            assert_eq!(pa.x.to_bits(), pb.x.to_bits());
+            assert_eq!(pa.y.to_bits(), pb.y.to_bits());
+        }
     }
 
     #[test]
