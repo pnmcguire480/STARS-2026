@@ -63,31 +63,45 @@ pub enum GameError {
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a saved game / match instance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct GameId(pub u64);
 
 /// Unique identifier for a player within a game.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct PlayerId(pub u32);
 
 /// Unique identifier for a star system within a galaxy.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct StarId(pub u32);
 
 /// Unique identifier for a planet within a galaxy.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct PlanetId(pub u32);
 
 /// Unique identifier for a fleet within a game.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct FleetId(pub u32);
 
 /// Unique identifier for a player-authored ship design.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct ShipDesignId(pub u32);
 
 /// Unique identifier for a player-authored battle plan.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct BattlePlanId(pub u32);
 
 // =============================================================================
@@ -165,12 +179,20 @@ impl Minerals {
     /// The zero bundle — convenient starting point for accumulators and
     /// tests. Prefer over `Minerals::default()` in engine code to make
     /// intent explicit ("start from zero" vs "use the default state").
-    pub const ZERO: Self = Self { ironium: 0, boranium: 0, germanium: 0 };
+    pub const ZERO: Self = Self {
+        ironium: 0,
+        boranium: 0,
+        germanium: 0,
+    };
 
     /// Construct a mineral bundle with the given kiloton amounts.
     #[must_use]
     pub const fn new(ironium: u32, boranium: u32, germanium: u32) -> Self {
-        Self { ironium, boranium, germanium }
+        Self {
+            ironium,
+            boranium,
+            germanium,
+        }
     }
 
     /// Total mineral count across all three kinds, in kilotons.
@@ -216,18 +238,24 @@ impl Minerals {
         // fits in a u32, but we use checked_sub anyway to make the safety
         // argument local to this line rather than dependent on the branch
         // above surviving refactors.
-        self.ironium = self
-            .ironium
-            .checked_sub(cost.ironium)
-            .ok_or(GameError::InsufficientResources("Minerals::spend (ironium)"))?;
-        self.boranium = self
-            .boranium
-            .checked_sub(cost.boranium)
-            .ok_or(GameError::InsufficientResources("Minerals::spend (boranium)"))?;
-        self.germanium = self
-            .germanium
-            .checked_sub(cost.germanium)
-            .ok_or(GameError::InsufficientResources("Minerals::spend (germanium)"))?;
+        self.ironium =
+            self.ironium
+                .checked_sub(cost.ironium)
+                .ok_or(GameError::InsufficientResources(
+                    "Minerals::spend (ironium)",
+                ))?;
+        self.boranium =
+            self.boranium
+                .checked_sub(cost.boranium)
+                .ok_or(GameError::InsufficientResources(
+                    "Minerals::spend (boranium)",
+                ))?;
+        self.germanium =
+            self.germanium
+                .checked_sub(cost.germanium)
+                .ok_or(GameError::InsufficientResources(
+                    "Minerals::spend (germanium)",
+                ))?;
         Ok(())
     }
 
@@ -286,7 +314,11 @@ impl MineralConcentrations {
     /// so data files and scenarios can experiment beyond canon.
     #[must_use]
     pub const fn new(ironium: u32, boranium: u32, germanium: u32) -> Self {
-        Self { ironium, boranium, germanium }
+        Self {
+            ironium,
+            boranium,
+            germanium,
+        }
     }
 }
 
@@ -662,11 +694,7 @@ impl ResearchAllocation {
         // fields should always sum to <= 100, but if a future refactor
         // breaks that invariant we prefer a 0 floor over a panic.
         self.biotechnology = 100u32.saturating_sub(
-            self.energy
-                + self.weapons
-                + self.propulsion
-                + self.construction
-                + self.electronics,
+            self.energy + self.weapons + self.propulsion + self.construction + self.electronics,
         );
     }
 }
@@ -710,7 +738,9 @@ impl Cost {
 /// Display code multiplies by 100 at the UI boundary via [`as_people`].
 ///
 /// [`as_people`]: Self::as_people
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct Colonists(pub u32);
 
@@ -807,10 +837,7 @@ impl Cargo {
     /// cases, and silent wrap is a determinism violation.
     #[must_use]
     pub const fn total_mass(&self) -> u64 {
-        self.ironium as u64
-            + self.boranium as u64
-            + self.germanium as u64
-            + self.colonists.0 as u64
+        self.ironium as u64 + self.boranium as u64 + self.germanium as u64 + self.colonists.0 as u64
     }
 }
 
@@ -1042,7 +1069,9 @@ pub enum VictoryCondition {
 /// generation multipliers and improves AI decision quality — it does
 /// **not** let the AI cheat on fog of war or scanning (per CLAUDE.md
 /// "no cheating AI" rule).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize,
+)]
 pub enum AiDifficulty {
     Easy,
     #[default]
@@ -1470,7 +1499,10 @@ mod tests {
         // Same for LrtId — twins, not copies.
         let ife = LrtId("IFE".to_string());
         let json = serde_json::to_string(&ife).expect("serialize LrtId");
-        assert_eq!(json, "\"IFE\"", "LrtId must serialize as a bare JSON string");
+        assert_eq!(
+            json, "\"IFE\"",
+            "LrtId must serialize as a bare JSON string"
+        );
         let decoded: LrtId = serde_json::from_str(&json).expect("deserialize LrtId");
         assert_eq!(ife, decoded);
 
@@ -1749,8 +1781,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&original).expect("serialize GameSettings");
-        let decoded: GameSettings =
-            serde_json::from_str(&json).expect("deserialize GameSettings");
+        let decoded: GameSettings = serde_json::from_str(&json).expect("deserialize GameSettings");
         assert_eq!(original, decoded);
     }
 
