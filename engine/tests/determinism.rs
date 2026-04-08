@@ -97,7 +97,13 @@ const EXPECTED_FINGERPRINT: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE8, 0x03,
     0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x19, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x32, 0x00,
     0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x07, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xD3, 0xC2, 0xEE, 0xAB, 0x18, 0x29, 0x96, 0xFA, 0x6C, 0x75,
+    0x8B, 0x3B, 0x6C, 0x34, 0xC7, 0x98, 0xD8, 0x47, 0xAE, 0xC2, 0xCF, 0xB8, 0x6A, 0x0D, 0xD2, 0xC2,
+    0x6E, 0xCC, 0x0D, 0xF2, 0x7A, 0x52, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00,
+    0x00, 0x00, 0x52, 0x69, 0x67, 0x65, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x40, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x70, 0x77, 0x40, 0x1F, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x4F,
+    0x64, 0x69, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6D, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x70, 0x76, 0x40,
 ];
 
 /// Build a deterministic byte sequence by exercising every arithmetic and
@@ -247,6 +253,57 @@ fn compute_determinism_fingerprint() -> Vec<u8> {
     // ─── 13. GameStatus default round-trip ─────────────────────────────
     let status = GameStatus::default();
     bytes.extend_from_slice(&bincode::serialize(&status).expect("GameStatus serialization"));
+
+    // ─── 14. seeded_rng (Atom 2.1) ──────────────────────────────────────
+    // Draw four u64s from a fixed-input rng and pack them little-endian.
+    // Catches any future drift in the FNV-1a constants, the seed buffer
+    // layout, or the ChaCha20 stream itself.
+    {
+        use rand::RngCore;
+        let mut rng = stars2026_engine::rng::seeded_rng(
+            0xDEAD_BEEF_CAFE_F00D,
+            0,
+            stars2026_engine::types::PlayerId(0),
+            "galaxy",
+        );
+        for _ in 0..4 {
+            bytes.extend_from_slice(&rng.next_u64().to_le_bytes());
+        }
+    }
+
+    // ─── 15. generate_galaxy (Atom 2.6) ─────────────────────────────────
+    // Build a deterministic Tiny+Normal galaxy from a fixed seed and
+    // hash its public surface into the fingerprint:
+    //   - star count (u32 LE)
+    //   - first star id, name length, name bytes, position bits
+    //   - last star id, name length, name bytes, position bits
+    // The first/last sample is sufficient — if any byte of the placement
+    // pipeline diverges, the position bits change. We avoid serializing
+    // the entire star list to keep the fingerprint compact and the
+    // failure message small.
+    {
+        let settings = GameSettings {
+            galaxy_size: GalaxySize::Tiny,
+            density: GalaxyDensity::Normal,
+            player_count: 1,
+            starting_year: 2400,
+            victory_conditions: vec![],
+            victory_requirements_met: 1,
+            ai_difficulty: stars2026_engine::types::AiDifficulty::Standard,
+            random_seed: 0xA1B2_C3D4_E5F6_0789,
+        };
+        let galaxy =
+            stars2026_engine::galaxy::generate_galaxy(&settings).expect("fingerprint galaxy");
+        bytes.extend_from_slice(&(galaxy.stars.len() as u32).to_le_bytes());
+        for idx in [0usize, galaxy.stars.len() - 1] {
+            let s = &galaxy.stars[idx];
+            bytes.extend_from_slice(&s.id.0.to_le_bytes());
+            bytes.extend_from_slice(&(s.name.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(s.name.as_bytes());
+            bytes.extend_from_slice(&s.position.x.to_bits().to_le_bytes());
+            bytes.extend_from_slice(&s.position.y.to_bits().to_le_bytes());
+        }
+    }
 
     bytes
 }
