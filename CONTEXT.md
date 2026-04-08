@@ -5,8 +5,8 @@
 ## Now
 - **Date:** 2026-04-07
 - **Phase:** 1 — core engine vocabulary
-- **Active task:** Phase 1 Task 1 — fresh `engine/src/types.rs`, growing atom-by-atom under the sniff-test protocol. 14 of ~16 atoms shipped; 25 tests passing; 17/19 legacy FR-19 tests reimplemented.
-- **Blocker:** None. Next atom (1.15, Planet/Star cluster) is ready to start.
+- **Active task:** **Phase 1 Task 1 COMPLETE.** `engine/src/types.rs` is the full type vocabulary required by SPEC FR-19 — 16 atoms shipped, 27 tests passing, FR-19 at **19/19**, clippy::pedantic clean. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
+- **Blocker:** None. Tier 5 review of `types.rs` is the next gate per AGENTS.md — foundational engine modules cannot begin their downstream dependents until Tier 5 signs off.
 
 ## Just Finished
 - Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.
@@ -23,16 +23,17 @@
   - 1.12 `Cost` + `new`.
   - 1.13 **`Colonists` newtype** at 100-unit granularity with checked arithmetic; `Cargo` + `total_mass` using it.
   - 1.14 `TurnPhase` (33 canonical variants, `CANONICAL_ORDER` const, tripwire test).
-- **FR-19 scorecard: 17/19 legacy type tests reimplemented and passing.** Remaining: `test_create_star_and_planet` (needs Planet/Star), `test_serialization_roundtrip_game_settings` (needs GameSettings cluster).
+  - 1.15 `ProductionItem` (8 canonical variants) + `QueueItem` (resource allocation tracking) + `Planet` (using `Colonists` newtype, not raw `u32`) + `Star` (derives drop `Eq`/`Hash` because of embedded `Position` with `f64`). FR-19 port: `create_star_and_planet_from_session_vocabulary`.
+  - 1.16 `VictoryCondition` (7 variants, `#[non_exhaustive]`) + `AiDifficulty` (default: Standard) + `GameStatus` (default: Setup) + `GameSettings` (**no `Default` impl** — removed the legacy `random_seed: 0` sentinel per Refactoring council; engine receives seeds from the host, it never generates them). FR-19 port: `game_settings_survive_json_roundtrip`.
+- **FR-19 scorecard: 19/19 COMPLETE.** SPEC Functional Requirement 19 formally satisfied. All legacy type tests reimplemented and passing against fresh, IP-clean, governance-aligned types.
 - Clippy `-D warnings` under `clippy::pedantic` remains green across the entire engine crate after every atom.
 - 4 governance decisions locked and saved to persistent memory (see Decisions Log below).
 
 ## Next (in order)
-1. Atom 1.15 — `ProductionItem` + `QueueItem` + `Planet` + `Star` cluster; port `test_create_star_and_planet` (FR-19 18/19).
-2. Atom 1.16 — `VictoryCondition` + `AiDifficulty` + `GameStatus` + `GameSettings` cluster; port `test_serialization_roundtrip_game_settings` (FR-19 19/19). **Fix pending from Refactoring council:** `GameSettings::default()` must NOT carry a `random_seed: 0` sentinel — the engine receives seeds from the host, it does not generate them.
-3. **Phase 1 Task 1 formal close** — full `types.rs` green, 19/19 FR-19 passing, Tier 5 review summoned before Atom 2.
-4. One-atom update to `SPEC.md` documenting the tech cap 30 deviation with a callout under FR-9 (per `project_tech_cap_30.md` memory).
-5. Begin Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density curves, homeworld distance validation. Council = Rust + Plan + Performance Engineer.
+1. **Tier 5 review** of the full `engine/src/types.rs` file per AGENTS.md (Claude Opus chat). Foundational engine modules require Tier 5 sign-off before their downstream dependents begin. Bring the file, the FR-19 checklist, and the four governance memory files.
+2. One-atom update to `SPEC.md` documenting the tech cap 30 deviation with a callout under FR-9 (per `project_tech_cap_30.md` memory).
+3. Begin Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density curves, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council = Rust + Plan + Performance Engineer. First function = the RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
+4. Subsequent atoms per the Plan council's sequence: race (data-driven loader), planet mechanics, tech research, ship designer, fleet movement, combat, turn engine. Each with its own council summons.
 
 ## Open Questions (deferred to the atom that needs them)
 - **Tech cost curve for levels 27–30** — deferred until `tech.rs` lands. Options: extrapolate the canonical Stars! curve mathematically, hand-tune four levels, or lift from a community mod with attribution.

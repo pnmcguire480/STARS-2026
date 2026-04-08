@@ -909,6 +909,210 @@ pub enum TurnPhase {
     RemoteTerraforming,
 }
 
+// =============================================================================
+// Production queue — what a planet is building this turn
+// =============================================================================
+
+/// A single thing a planet can build through its production queue.
+///
+/// The enum is `#[non_exhaustive]` because DLC may introduce new build
+/// kinds (packet-delivered relics, exotic terraforming machinery) and the
+/// engine must refuse to compile code that hasn't decided how to handle
+/// unknown variants. Count fields intentionally live on [`QueueItem`],
+/// not on the variants themselves — one source of truth for "how many."
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ProductionItem {
+    /// Add one more factory to the planet's industrial base.
+    Factory,
+    /// Add one more mine to the planet's mineral-extraction base.
+    Mine,
+    /// Add one more planetary defense installation.
+    Defense,
+    /// Terraform the planet one click closer to the race's ideal
+    /// environment. The specific axis (gravity/temp/radiation) is chosen
+    /// by the production logic, not stored on the queue item.
+    Terraform,
+    /// Spend resources to manufacture minerals via mineral alchemy.
+    /// Only usable by races with the Mineral Alchemy LRT (checked at
+    /// build time, not at queue time).
+    MineralAlchemy,
+    /// Build a ship of the given player-authored design.
+    ShipDesign(ShipDesignId),
+    /// Build (or upgrade to) the given starbase design in orbit.
+    Starbase(ShipDesignId),
+    /// Install a planetary scanner so the planet contributes to fog-of-war
+    /// visibility.
+    Scanner,
+}
+
+/// One entry in a planet's production queue.
+///
+/// Holds the item to build, how many to build, and any resources or
+/// minerals that have been pre-allocated to it (so a partially-built item
+/// resumes cleanly next turn instead of losing progress). The queue itself
+/// lives on [`Planet`] as `Vec<QueueItem>` — ordering is insertion order,
+/// which is naturally deterministic, so no `BTreeMap` is needed here.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct QueueItem {
+    pub item: ProductionItem,
+    pub quantity: u32,
+    pub allocated_resources: u32,
+    pub allocated_minerals: Minerals,
+}
+
+// =============================================================================
+// Planet & Star — the galactic map primitives
+// =============================================================================
+
+/// A single planet orbiting a star.
+///
+/// Planets are owned by at most one player (`owner_id: Option<PlayerId>`).
+/// Ownership gates everything: unowned planets can be colonized, owned
+/// planets produce resources, are subject to bombing, appear in scanner
+/// sweeps, etc.
+///
+/// Population lives on the planet as a [`Colonists`] newtype — the
+/// 100-unit-granularity convention from Stars! 1995. Surface minerals
+/// (the stockpile available for production) and mineral concentrations
+/// (the extraction-rate gate) are stored as two distinct fields, matching
+/// the 1995 canon.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Planet {
+    pub id: PlanetId,
+    pub star_id: StarId,
+    pub name: String,
+    /// `None` = uncolonized, available for the first player to arrive
+    /// with a colonizer. `Some(player_id)` = owned by that player.
+    pub owner_id: Option<PlayerId>,
+    /// Current population in 100-colonist units. Zero on an uncolonized
+    /// planet; grows per turn via the population formula in `planet.rs`
+    /// (future atom).
+    pub population: Colonists,
+    pub environment: Environment,
+    pub mineral_concentrations: MineralConcentrations,
+    /// Minerals already extracted and sitting on the surface, available
+    /// for construction or transport. Separate from the concentration
+    /// which only gates extraction rate.
+    pub surface_minerals: Minerals,
+    pub mines: u32,
+    pub factories: u32,
+    pub defenses: u32,
+    pub has_scanner: bool,
+    pub has_starbase: bool,
+    /// Which starbase design is in orbit, if any. `None` if `has_starbase`
+    /// is `false`. The pair of fields intentionally lets callers check
+    /// cheaply via `has_starbase` without chasing the option.
+    pub starbase_design_id: Option<ShipDesignId>,
+    pub production_queue: Vec<QueueItem>,
+}
+
+// =============================================================================
+// Game setup — victory conditions, difficulty, status, settings
+// =============================================================================
+
+/// A single victory condition that can be checked at turn end to decide
+/// whether any player has won. A game may configure multiple conditions
+/// and require one-of or all-of to trigger the win state.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VictoryCondition {
+    /// Own at least this percentage (0–100) of all planets in the galaxy.
+    OwnPercentOfPlanets(u32),
+    /// Reach at least this tech level in any single field. With the
+    /// STARS 2026 cap of 30 (canon 26), the practical ceiling is higher
+    /// than in 1995 — this condition must be configured with care to
+    /// avoid making the win condition unreachable.
+    ReachTechLevel(u32),
+    /// Accumulate a score above this threshold.
+    ExceedsScoreOf(u32),
+    /// Lead the second-place player's score by at least this percentage.
+    ExceedsSecondPlaceBy(u32),
+    /// Total production capacity exceeds this threshold (resources/turn).
+    ProductionCapacityOf(u32),
+    /// Own at least this many capital ships (hulls at the top tier of
+    /// the construction tech ladder).
+    OwnCapitalShips(u32),
+    /// Whoever has the highest score when the game reaches this turn
+    /// wins. Used as the default fallback "end by turn N" condition.
+    HighestScoreAfterTurns(u32),
+}
+
+/// How hard the AI opponents play. Higher difficulty raises AI resource
+/// generation multipliers and improves AI decision quality — it does
+/// **not** let the AI cheat on fog of war or scanning (per CLAUDE.md
+/// "no cheating AI" rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
+pub enum AiDifficulty {
+    Easy,
+    #[default]
+    Standard,
+    Hard,
+    Expert,
+}
+
+/// The current lifecycle state of a game instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum GameStatus {
+    /// Players are being configured but the galaxy has not yet been
+    /// generated and the first turn has not yet been run.
+    #[default]
+    Setup,
+    /// Turns are actively being processed.
+    InProgress,
+    /// A win condition has fired or all players have been eliminated.
+    Completed,
+}
+
+/// Game configuration chosen at creation time.
+///
+/// **Determinism note:** this struct has no `Default` impl. The legacy
+/// scaffold's `Default::default()` set `random_seed: 0` with a comment
+/// saying "0 = generate from system time" — a sentinel-for-hostness that
+/// is a classic determinism foot-gun. The engine never generates its
+/// own seeds; it receives them from the host (browser, server, CLI).
+/// Construct `GameSettings` explicitly at every call site, and the type
+/// will tell you if you forgot the seed by failing to compile.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct GameSettings {
+    pub galaxy_size: GalaxySize,
+    pub density: GalaxyDensity,
+    pub player_count: u32,
+    pub starting_year: u32,
+    pub victory_conditions: Vec<VictoryCondition>,
+    /// How many of the listed victory conditions must be met simultaneously
+    /// for the game to end. `1` = any-one-of; `N` = all-of where N equals
+    /// `victory_conditions.len()`.
+    pub victory_requirements_met: u32,
+    pub ai_difficulty: AiDifficulty,
+    /// The deterministic seed that drives **every** RNG decision in this
+    /// game, from galaxy generation to combat rolls. The engine derives
+    /// subsystem-specific seeds via `(random_seed, turn, player_id,
+    /// subsystem)` tuples, so this one `u64` is the root of all
+    /// non-determinism in the match.
+    pub random_seed: u64,
+}
+
+/// A star system containing zero or more planets.
+///
+/// Stars in STARS 2026 always host at least one planet in MVP (uninhabited
+/// stars will arrive later if needed for flavor). The `planets` vector
+/// keeps them in a deterministic insertion order — no `BTreeMap` because
+/// lookup-by-id goes through the `Planet.id` field directly in engine
+/// code.
+///
+/// `Eq` and `Hash` are intentionally **not** derived because [`Position`]
+/// contains `f64` and cannot implement either. Stars are keyed on their
+/// [`StarId`] newtype everywhere they need to be looked up, so the lack
+/// of `Hash` on `Star` itself is never a blocker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Star {
+    pub id: StarId,
+    pub name: String,
+    pub position: Position,
+    pub planets: Vec<Planet>,
+}
+
 impl TurnPhase {
     /// The canonical 33 turn phases in execution order. Any code that
     /// iterates phases must use this constant rather than hand-listing
@@ -1468,6 +1672,86 @@ mod tests {
             colonists: Colonists::new(10),
         };
         assert_eq!(cargo.total_mass(), 185);
+    }
+
+    /// FR-19 port of the legacy `test_create_star_and_planet`.
+    ///
+    /// Constructs a `Planet` and a `Star`-holding-that-planet from the
+    /// vocabulary this session has built up (`PlanetId`, `StarId`,
+    /// `Colonists`, `Environment`, `MineralConcentrations`, `Minerals`,
+    /// `Position`, `ProductionItem`/`QueueItem`), then sanity-checks
+    /// three things:
+    ///   1. the star knows about its one planet,
+    ///   2. the planet's name survived round-tripping through the struct,
+    ///   3. environment fields read back unchanged.
+    ///
+    /// The legacy test used `population: 0` as a raw `u32`; our rewrite
+    /// uses `Colonists::ZERO`, which is the idiomatic empty-planet value
+    /// and pins the newtype convention in the test suite.
+    #[test]
+    fn create_star_and_planet_from_session_vocabulary() {
+        let planet = Planet {
+            id: PlanetId(1),
+            star_id: StarId(1),
+            name: "Alpha Prime".to_string(),
+            owner_id: None,
+            population: Colonists::ZERO,
+            environment: Environment {
+                gravity: 50,
+                temperature: 50,
+                radiation: 50,
+            },
+            mineral_concentrations: MineralConcentrations::new(80, 60, 40),
+            surface_minerals: Minerals::new(200, 150, 100),
+            mines: 0,
+            factories: 0,
+            defenses: 0,
+            has_scanner: false,
+            has_starbase: false,
+            starbase_design_id: None,
+            production_queue: vec![],
+        };
+        let star = Star {
+            id: StarId(1),
+            name: "Alpha".to_string(),
+            position: Position::new(100.0, 200.0),
+            planets: vec![planet],
+        };
+
+        assert_eq!(star.planets.len(), 1);
+        assert_eq!(star.planets[0].name, "Alpha Prime");
+        assert_eq!(star.planets[0].environment.gravity, 50);
+    }
+
+    /// FR-19 port of the legacy `test_serialization_roundtrip_game_settings`.
+    ///
+    /// The legacy test called `GameSettings::default()` — our rewrite
+    /// deliberately removed the `Default` impl (see the `GameSettings`
+    /// doc comment for the determinism-foot-gun rationale), so this
+    /// port constructs the settings explicitly. The construction doubles
+    /// as a compile-time check that all fields are present and typed
+    /// correctly — a future field addition will require touching this
+    /// test, which is the intended forcing function.
+    #[test]
+    fn game_settings_survive_json_roundtrip() {
+        let original = GameSettings {
+            galaxy_size: GalaxySize::Medium,
+            density: GalaxyDensity::Normal,
+            player_count: 4,
+            starting_year: 2400,
+            victory_conditions: vec![
+                VictoryCondition::OwnPercentOfPlanets(60),
+                VictoryCondition::HighestScoreAfterTurns(200),
+            ],
+            victory_requirements_met: 1,
+            ai_difficulty: AiDifficulty::Standard,
+            random_seed: 0xDEAD_BEEF_CAFE_F00D,
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize GameSettings");
+        let decoded: GameSettings =
+            serde_json::from_str(&json).expect("deserialize GameSettings");
+        assert_eq!(original, decoded);
     }
 
     /// FR-19 port of the legacy `test_turn_phases_are_ordered`.

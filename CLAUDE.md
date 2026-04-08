@@ -35,21 +35,24 @@
 
 - **Date:** 2026-04-07
 - **Phase:** 1 — core engine vocabulary
-- **Active task:** Phase 1 Task 1 (`engine/src/types.rs`) — in progress, 14 of ~16 atoms shipped.
+- **Active task:** **Phase 1 Task 1 COMPLETE** — `engine/src/types.rs` is the full type vocabulary required by SPEC FR-19.
 - **What was accomplished:**
   - Phase 1 Council summoned (Rust + Game Design + Plan + Refactoring) and synthesized into an atom sequence.
-  - Fresh `engine/src/types.rs` grown atom-by-atom under the sniff-test protocol. **14 atoms shipped, 25 tests passing, clippy::pedantic clean.**
-  - Types delivered (in order): `GameError` (grown on demand), 7 typed ID newtypes, `Position`, `MineralType`/`Minerals` (checked arithmetic, atomic-on-failure), `MineralConcentrations`, `Environment`/`HabAxis` (enum — killed legacy `immune: bool` invalid-state smell)/`HabRanges`, `GalaxySize`/`GalaxyDensity`, `PrtId`/`LrtId` (data-driven, `#[serde(transparent)]`), `TechField`/`TechLevels`/`ResearchAllocation`, `Cost`, `Colonists` newtype at 100-unit granularity, `Cargo`, `TurnPhase` (33 canonical variants + `CANONICAL_ORDER` const).
-  - **FR-19 progress: 17 of 19 legacy type tests reimplemented and passing.** Remaining two (`test_create_star_and_planet`, `test_serialization_roundtrip_game_settings`) require Planet/Star and GameSettings clusters — next session's work.
-  - 4 governance decisions saved to persistent memory:
+  - Fresh `engine/src/types.rs` grown atom-by-atom under the sniff-test protocol. **16 atoms shipped, 27 tests passing, clippy::pedantic clean.**
+  - Types delivered (in order): `GameError` (grown on demand, 3 variants), 7 typed ID newtypes, `Position`, `MineralType`/`Minerals` (checked arithmetic, atomic-on-failure), `MineralConcentrations`, `Environment`/`HabAxis` (enum — killed legacy `immune: bool` invalid-state smell)/`HabRanges`, `GalaxySize`/`GalaxyDensity`, `PrtId`/`LrtId` (data-driven, `#[serde(transparent)]`), `TechField`/`TechLevels`/`ResearchAllocation`, `Cost`, `Colonists` newtype at 100-unit granularity, `Cargo`, `TurnPhase` (33 canonical variants + `CANONICAL_ORDER` const), `ProductionItem`/`QueueItem`/`Planet`/`Star`, `VictoryCondition`/`AiDifficulty`/`GameStatus`/`GameSettings` (no sentinel `Default` — engine never generates its own seeds).
+  - **FR-19 COMPLETE — 19 of 19 legacy type tests reimplemented and passing.** SPEC Functional Requirement 19 formally satisfied.
+  - 4 governance decisions locked and saved to persistent memory:
     - PRT/LRT are **data-driven** (`PrtId(String)` + JSON registry), not enums — honors SPEC.md DLC-as-JSON promise.
     - **Never HashMap, always BTreeMap** in any serialized or turn-iterated type (determinism rule).
     - **Colonists newtype** at 100-unit granularity — matches Stars! 1995 canon exactly, kills off-by-100 bugs at compile time.
     - **Tech field cap is 30, not canonical 26** — STARS 2026's signature mechanical deviation, documented in memory and pending a SPEC.md callout atom.
-- **Files changed:** 2 in engine (`engine/src/types.rs` new, `engine/src/lib.rs` modified to wire `pub mod types`) + governance sync (`CLAUDE.md`, `CONTEXT.md`).
-- **Uncommitted changes:** 0 after the Path C checkpoint commit.
+  - Two Path C checkpoint commits landed this session:
+    1. `0d8be3d feat(engine): phase 1 task 1 — types.rs atoms 1.1–1.14 (17/19 FR-19)`
+    2. (pending) Phase 1 Task 1 close — atoms 1.15–1.16, FR-19 19/19, governance sync.
+- **Files changed:** 2 in engine (`engine/src/types.rs` new, `engine/src/lib.rs` wired `pub mod types`) + governance sync (`CLAUDE.md`, `CONTEXT.md`). `.brainstormer/session.json` updated locally per the repo's brainstormer-stays-local pattern.
+- **Uncommitted changes:** 0 after both checkpoint commits.
 - **CodeGlass:** 0 decisions flagged, 0 patterns detected.
-- **Next session should start with:** Atom 1.15 — Planet/Star cluster (`ProductionItem`, `QueueItem`, `Planet`, `Star`) to port `test_create_star_and_planet` (FR-19 test 18/19). Then Atom 1.16 — GameSettings cluster (`VictoryCondition`, `AiDifficulty`, `GameStatus`, `GameSettings`) to port `test_serialization_roundtrip_game_settings` and reach 19/19 FR-19. Refactoring council flagged: `GameSettings::default()` must NOT use a `random_seed: 0` sentinel — the engine receives seeds from the host, never generates them. After 19/19, Phase 1 Task 1 is formally complete; summon Tier 5 review before starting Atom 2 (`engine/src/galaxy.rs`). Also pending: one-atom update to SPEC.md documenting the tech cap 30 deviation (per `project_tech_cap_30.md` memory).
+- **Next session should start with:** **Tier 5 review** (Claude Opus chat) of the full `engine/src/types.rs` file before any further engine code lands — per AGENTS.md, foundational engine modules require Tier 5 sign-off. Bring the file, the SPEC FR-19 checklist (now 19/19), and the four governance memory files. After sign-off: one-atom SPEC.md update documenting the tech cap 30 deviation under FR-9 (per `project_tech_cap_30.md` memory). **Then** Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density-driven distribution, homeworld distance validation against `GalaxySize::min_homeworld_distance`. Council for Atom 2 = Rust + Plan + Performance Engineer. First function is the RNG constructor that seeds from `(game_seed, turn, player_id, subsystem_tag)` — the determinism primitive everything else builds on.
 
 ### What Works Right Now
 
