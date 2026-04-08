@@ -4,42 +4,58 @@
 
 ## Now
 - **Date:** 2026-04-07
-- **Phase:** 0b — Project skeleton
-- **Active task:** Authoring kernel governance docs + scaffolding Cargo workspace + SvelteKit frontend.
-- **Blocker:** None.
+- **Phase:** 1 — core engine vocabulary
+- **Active task:** Phase 1 Task 1 — fresh `engine/src/types.rs`, growing atom-by-atom under the sniff-test protocol. 14 of ~16 atoms shipped; 25 tests passing; 17/19 legacy FR-19 tests reimplemented.
+- **Blocker:** None. Next atom (1.15, Planet/Star cluster) is ready to start.
 
 ## Just Finished
-- Phase 0a: archived legacy `files/` to `reference/legacy-desktop-scaffold/`.
-- Ran `brainstormer init`.
-- Authored `SPEC.md`, `brainstormer/angles.md`, `brainstormer/hooks.md`.
-- Updated `CLAUDE.md` with locked stack and sniff-test rules.
+- Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.
+- Phase 1 Council summoned (Rust + Game Design + Plan + Refactoring) and synthesized a 29-atom sequence for `types.rs`.
+- **Atoms 1.1–1.14 shipped** — see `engine/src/types.rs`. Each atom: one cohesive type cluster + its tests, then a six-step sniff test (unit → module → AC → regression → clippy → stop).
+  - 1.1 `GameError` (grown on demand, 3 variants — `InvalidRace`, `ArithmeticOverflow`, `InsufficientResources`).
+  - 1.2 Seven typed ID newtypes (`GameId`, `PlayerId`, `StarId`, `PlanetId`, `FleetId`, `ShipDesignId`, `BattlePlanId`) — `Ord`-derived for BTreeMap use.
+  - 1.3 `Position` + `distance_to`.
+  - 1.4 `MineralType` + `Minerals` with **checked arithmetic** (atomic-on-failure `spend`/`add`).
+  - 1.5 + 1.6 `MineralConcentrations`, `Environment`, **`HabAxis` enum** (killed the legacy `immune: bool` invalid-state smell), `HabRanges`.
+  - 1.7 + 1.8 `GalaxySize` (+3 preset impls), `GalaxyDensity`.
+  - 1.9 `PrtId` / `LrtId` newtypes with `#[serde(transparent)]` — **data-driven**, replacing the legacy hardcoded enum.
+  - 1.10 + 1.11 `TechField`, `TechLevels` (get/set/meets_requirements), `ResearchAllocation` (+ `normalize` with u64-intermediate safety).
+  - 1.12 `Cost` + `new`.
+  - 1.13 **`Colonists` newtype** at 100-unit granularity with checked arithmetic; `Cargo` + `total_mass` using it.
+  - 1.14 `TurnPhase` (33 canonical variants, `CANONICAL_ORDER` const, tripwire test).
+- **FR-19 scorecard: 17/19 legacy type tests reimplemented and passing.** Remaining: `test_create_star_and_planet` (needs Planet/Star), `test_serialization_roundtrip_game_settings` (needs GameSettings cluster).
+- Clippy `-D warnings` under `clippy::pedantic` remains green across the entire engine crate after every atom.
+- 4 governance decisions locked and saved to persistent memory (see Decisions Log below).
 
 ## Next (in order)
-1. ✅ Write SCENARIOS.md
-2. ✅ Write ARCHITECTURE.md
-3. ✅ Write AGENTS.md, CODEGUIDE.md, ART.md
-4. (now) Write CONTEXT.md, SNIFFTEST.md, README.md, brainstormer/ruleset.md
-5. Create root Cargo.toml workspace + empty `engine/` crate
-6. Scaffold `frontend/` via SvelteKit installer
-7. `git init` + first commit
-8. **STOP** for Patrick sign-off
-9. Phase 1 Task 1: implement fresh `engine/src/types.rs` (informed by legacy study material) — sniff test, stop.
+1. Atom 1.15 — `ProductionItem` + `QueueItem` + `Planet` + `Star` cluster; port `test_create_star_and_planet` (FR-19 18/19).
+2. Atom 1.16 — `VictoryCondition` + `AiDifficulty` + `GameStatus` + `GameSettings` cluster; port `test_serialization_roundtrip_game_settings` (FR-19 19/19). **Fix pending from Refactoring council:** `GameSettings::default()` must NOT carry a `random_seed: 0` sentinel — the engine receives seeds from the host, it does not generate them.
+3. **Phase 1 Task 1 formal close** — full `types.rs` green, 19/19 FR-19 passing, Tier 5 review summoned before Atom 2.
+4. One-atom update to `SPEC.md` documenting the tech cap 30 deviation with a callout under FR-9 (per `project_tech_cap_30.md` memory).
+5. Begin Atom 2 — `engine/src/galaxy.rs`: procedural star placement with seeded `ChaCha20Rng`, density curves, homeworld distance validation. Council = Rust + Plan + Performance Engineer.
 
-## Open Questions
-- Cargo workspace will use Rust edition 2024 — confirm toolchain available.
-- SvelteKit installer is interactive — may need manual flag passing for non-interactive run.
-- Defer wasm-pack setup until first WASM build is needed (Phase 1 Task ~16).
+## Open Questions (deferred to the atom that needs them)
+- **Tech cost curve for levels 27–30** — deferred until `tech.rs` lands. Options: extrapolate the canonical Stars! curve mathematically, hand-tune four levels, or lift from a community mod with attribution.
+- **What unlocks at tech levels 27–30** — deferred to `ship.rs` / `components.json`. Options: pure score/bragging levels with no new components, new DLC-style content designed from scratch, or redistribute existing Stars! content across a wider ladder.
+- **Starting ship design ids referenced from `data/prt_traits.json`** — will point at `data/hulls.json` entries that do not yet exist. The loader must tolerate unknown ids during v0.1 bootstrap and validate strictly once `hulls.json` lands.
+- **AC-2 pacing impact** (200-turn game in 60s) from the 30-level tech ladder — measure when `tech.rs` and `turn.rs` are runnable end-to-end.
 
 ## Decisions Log
 - 2026-04-07: Stack locked — Rust+WASM engine, SvelteKit/TS frontend, Axum server (v0.2). See SPEC.md tech table.
 - 2026-04-07: Player cap set at 16 (canonical). v0.1 single-player only.
 - 2026-04-07: Multiplayer = v0.2, mobile/desktop wrap = v0.3, full PRT roster = v1.0.
-- 2026-04-07: DLC strategy = data/*.json + sprite packs only, never engine forks.
+- 2026-04-07: DLC strategy = `data/*.json` + sprite packs only, never engine forks.
 - 2026-04-07: Reference material in `reference/legacy-desktop-scaffold/` is study-only, never inherited.
+- **2026-04-07:** PRTs and LRTs are **data-driven** (`PrtId(String)` + `LrtId(String)` + JSON registries), not Rust enums. Honors the DLC promise in SPEC. Phase 1 Council recommendation; Patrick confirmed. See `memory/project_prt_data_driven.md`.
+- **2026-04-07:** **Never `HashMap`, always `BTreeMap`** in any type that is serialized, persisted, iterated during turn generation, or hashed for the cross-target determinism gate. `HashMap`'s randomized iteration order would break the wasm/native byte-identical contract. Unanimous council. See `memory/feedback_determinism_btreemap.md`.
+- **2026-04-07:** Population and colonist cargo use a **`Colonists(u32)` newtype** where the inner value counts 100-colonist blocks, matching 1995 Stars! canon exactly. Prevents off-by-100 bugs at compile time. See `memory/project_colonists_newtype.md`.
+- **2026-04-07:** **Tech field cap is 30, not canon 26** — STARS 2026's signature mechanical deviation and its positioning differentiator vs every other Stars! clone. Extends late-game depth by four tiers; LRT/PRT bonuses can push further. Requires a SPEC.md callout atom, a FORMULAS.md cost-curve extension when `tech.rs` lands, and a README marketing bullet. See `memory/project_tech_cap_30.md`.
+- **2026-04-07:** PRT/LRT JSON schema **Option B** (flat effects table) approved — see the schema design captured in session notes. Single `data/prt_traits.json` file with `schema_version: 1`, 9 sections (identity, starting state, economy, research, terraforming, combat, stealth, infrastructure, exclusive content). LRTs use a parallel schema in `data/lrt_traits.json`.
 
 ## Files Created This Phase
 - `SPEC.md`, `SCENARIOS.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CODEGUIDE.md`, `ART.md`, `CONTEXT.md`, `SNIFFTEST.md`, `README.md`
 - `brainstormer/angles.md`, `brainstormer/hooks.md`, `brainstormer/ruleset.md`
 - `Cargo.toml`, `engine/Cargo.toml`, `engine/src/lib.rs`
+- **`engine/src/types.rs`** (new this session, ~1300 lines, 24 tests + 1 sentinel, clippy pedantic clean)
 - `frontend/` (via SvelteKit installer)
 - `.gitignore`

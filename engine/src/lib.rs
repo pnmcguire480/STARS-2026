@@ -9,9 +9,13 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 
-// Modules will be added in Phase 1, one at a time, with sniff tests.
-// Order: types → rng → galaxy → race → planet → tech → ship → fleet
-//      → combat → scanner → turn → ai
+// Modules grow one sniff-tested atom at a time, per SNIFFTEST.md.
+// Phase 1 order: types → rng → galaxy → race → planet → tech → ship
+//              → fleet → combat → scanner → turn → ai
+
+pub mod types;
+
+pub use types::GameError;
 
 #[cfg(test)]
 mod tests {

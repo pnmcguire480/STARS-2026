@@ -34,14 +34,22 @@
 ### Last Session
 
 - **Date:** 2026-04-07
+- **Phase:** 1 — core engine vocabulary
+- **Active task:** Phase 1 Task 1 (`engine/src/types.rs`) — in progress, 14 of ~16 atoms shipped.
 - **What was accomplished:**
-  - chore: CI, contributing, issue templates
-  - docs: SEO-optimized README + untrack brainstormer/
-  - chore: phase 0 â€” project skeleton
-- **Files changed:** 0 files across 3 commits
-- **Uncommitted changes:** 1 files
-- **CodeGlass:** 0 decisions flagged, 0 patterns detected
-- **Next session should start with:** Phase 1 Task 1 — write fresh `engine/src/types.rs` (study `reference/legacy-desktop-scaffold/types.rs` for ideas, do NOT inherit). Summon Phase 1 Council per AGENTS.md (Rust, Game Design, Plan, Refactoring). Sniff test → STOP for approval.
+  - Phase 1 Council summoned (Rust + Game Design + Plan + Refactoring) and synthesized into an atom sequence.
+  - Fresh `engine/src/types.rs` grown atom-by-atom under the sniff-test protocol. **14 atoms shipped, 25 tests passing, clippy::pedantic clean.**
+  - Types delivered (in order): `GameError` (grown on demand), 7 typed ID newtypes, `Position`, `MineralType`/`Minerals` (checked arithmetic, atomic-on-failure), `MineralConcentrations`, `Environment`/`HabAxis` (enum — killed legacy `immune: bool` invalid-state smell)/`HabRanges`, `GalaxySize`/`GalaxyDensity`, `PrtId`/`LrtId` (data-driven, `#[serde(transparent)]`), `TechField`/`TechLevels`/`ResearchAllocation`, `Cost`, `Colonists` newtype at 100-unit granularity, `Cargo`, `TurnPhase` (33 canonical variants + `CANONICAL_ORDER` const).
+  - **FR-19 progress: 17 of 19 legacy type tests reimplemented and passing.** Remaining two (`test_create_star_and_planet`, `test_serialization_roundtrip_game_settings`) require Planet/Star and GameSettings clusters — next session's work.
+  - 4 governance decisions saved to persistent memory:
+    - PRT/LRT are **data-driven** (`PrtId(String)` + JSON registry), not enums — honors SPEC.md DLC-as-JSON promise.
+    - **Never HashMap, always BTreeMap** in any serialized or turn-iterated type (determinism rule).
+    - **Colonists newtype** at 100-unit granularity — matches Stars! 1995 canon exactly, kills off-by-100 bugs at compile time.
+    - **Tech field cap is 30, not canonical 26** — STARS 2026's signature mechanical deviation, documented in memory and pending a SPEC.md callout atom.
+- **Files changed:** 2 in engine (`engine/src/types.rs` new, `engine/src/lib.rs` modified to wire `pub mod types`) + governance sync (`CLAUDE.md`, `CONTEXT.md`).
+- **Uncommitted changes:** 0 after the Path C checkpoint commit.
+- **CodeGlass:** 0 decisions flagged, 0 patterns detected.
+- **Next session should start with:** Atom 1.15 — Planet/Star cluster (`ProductionItem`, `QueueItem`, `Planet`, `Star`) to port `test_create_star_and_planet` (FR-19 test 18/19). Then Atom 1.16 — GameSettings cluster (`VictoryCondition`, `AiDifficulty`, `GameStatus`, `GameSettings`) to port `test_serialization_roundtrip_game_settings` and reach 19/19 FR-19. Refactoring council flagged: `GameSettings::default()` must NOT use a `random_seed: 0` sentinel — the engine receives seeds from the host, never generates them. After 19/19, Phase 1 Task 1 is formally complete; summon Tier 5 review before starting Atom 2 (`engine/src/galaxy.rs`). Also pending: one-atom update to SPEC.md documenting the tech cap 30 deviation (per `project_tech_cap_30.md` memory).
 
 ### What Works Right Now
 
