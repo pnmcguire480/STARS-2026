@@ -14,6 +14,7 @@
 //              → fleet → combat → scanner → turn → ai
 
 pub mod data;
+pub mod determinism;
 pub mod galaxy;
 pub mod rng;
 pub mod types;
