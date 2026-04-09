@@ -19,6 +19,9 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
+      - name: Install wasm-pack
+        run: curl -sL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:

@@ -82,6 +82,26 @@ else
 fi
 pass "cargo check (wasm32)"
 
+# ─── Step 5: WASM test (cross-target determinism gate) ──────────────────────
+# This is the Atom B proof: the same determinism fingerprint must be
+# byte-identical when computed on wasm32 as on native. wasm-pack test --node
+# runs the wasm-bindgen-test in engine/tests/determinism_wasm.rs under Node.js.
+# If wasm-pack is not installed, skip with a warning (CI must have it).
+if command -v wasm-pack &>/dev/null; then
+    step "wasm-pack test --node engine (cross-target determinism)"
+    if [ "$VERBOSE" = "--verbose" ]; then
+        wasm-pack test --node engine || fail "wasm-pack test --node"
+    else
+        wasm-pack test --node engine 2>&1 | tail -10 || fail "wasm-pack test --node"
+    fi
+    pass "wasm-pack test --node (cross-target determinism)"
+    WASM_TEST_STATUS="✓ wasm-test  (cross-target determinism)"
+else
+    printf "\n${YELLOW}[SKIP]${RESET} wasm-pack not installed — skipping cross-target determinism test\n"
+    printf "       Install with: curl -sL https://github.com/nicknisi/setup-wasm-pack/releases/... or cargo install wasm-pack\n"
+    WASM_TEST_STATUS="~ wasm-test  (SKIPPED — wasm-pack not installed)"
+fi
+
 # ─── Done ───────────────────────────────────────────────────────────────────
 printf "\n${GREEN}═══════════════════════════════════════════════════════════════${RESET}\n"
 printf "${GREEN}  SNIFF TEST: ALL CHECKS PASSED${RESET}\n"
@@ -90,4 +110,5 @@ printf "  ✓ test       (native)\n"
 printf "  ✓ clippy     (pedantic, deny warnings)\n"
 printf "  ✓ fmt        (rustfmt --check)\n"
 printf "  ✓ wasm32     (dual-target gate)\n"
+printf "  %s\n" "$WASM_TEST_STATUS"
 printf "\nNext: STOP for approval per SNIFFTEST.md.\n"
