@@ -51,11 +51,11 @@ The single most important property the brief asked for — **every commit on mai
 ---
 
 ## Now
-- **Date:** 2026-04-08 (autonomous-mode session in progress)
-- **Phase:** 1 — Atom 2 (`engine/src/galaxy.rs`) underway, autonomous mode
-- **Active task:** **Atom 2 in progress — 4 of 8 atoms shipped (2.1–2.4).** rng.rs primitive landed, galaxy.rs has the name registry, random_position, and density-jittered actual_star_count. 51 unit + 2 integration tests pass, sniff green at every push, CI green. Sync milestone reached after 2.4 per the council-revised cadence. Next: 2.5 (place_one_star + place_all_stars merged), 2.6 (Galaxy struct + generate_galaxy merged), 2.7 (extend determinism fingerprint), 2.8 (FR-1 acceptance test), then closing Paladin + Crucible.
-- **Active task (frozen, pre-Atom-2 plan):** **Phase 1 Task 1 + hardening pass BOTH COMPLETE.** `engine/src/types.rs` shipped at 19/19 FR-19 (16 atoms), then hardened by ADR-0002 (9 more atoms: H1–H9) after a Crucible + Paladin audit surfaced 21 findings. Current state: 32 tests (30 unit + 2 integration), 4 sniff gates run via `scripts/sniff.sh` (CI uses same script verbatim), wasm32 verified on every push, HashMap banned at compile time, determinism fingerprint pinned at 406 bytes. Awaiting Tier 5 review before Atom 2 (`galaxy.rs`).
-- **Blocker:** None. Tier 5 review of the hardened `types.rs` + `engine/tests/determinism.rs` is the next gate per AGENTS.md.
+- **Date:** 2026-04-08 (post-audit, Atom A hardening interlude in progress)
+- **Phase:** 1 — Atom 2 **COMPLETE** (10 sub-atoms, 67 tests green, CI green on `2237138`). Atom A hardening interlude **IN PROGRESS** (A.1+A.2 landed as `860ead4`, A.3 governance sync next).
+- **Active task:** Atom A — 13-sub-atom mechanical hardening pass closing cheap Crucible P1s and re-deriving Atom 2.9 generator math against the P1-9 decision (Tiny=24 canon, not 32 SPEC). Full scope in CLAUDE.md "Last Session" block. Atom order locked: A → B (wasm-bindgen-test cross-target fingerprint) → C (Atom 3 = `planet.rs` full council).
+- **Active task (frozen, pre-audit):** Atom 2 autonomous sleep-shift — closed 10/10 sub-atoms + P0 fixes 2.9+2.10 per the session brief, closing Paladin + Crucible ran, 67 tests passing, wake-up report at the top of this file.
+- **Blocker:** Cairntir `stars-2026` MCP wing is broken (embedding dimension mismatch 64 vs 384) — needs `cairntir init --user --force` out-of-band. Critical decisions backed up to auto-memory as a fallback.
 
 ## Just Finished
 - Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.

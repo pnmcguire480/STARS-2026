@@ -33,15 +33,27 @@
 
 ### Last Session
 
-- **Date:** 2026-04-08 (autonomous-mode Atom 2 run, in progress)
-- **Phase:** 1 — Atom 2 `engine/src/galaxy.rs`, 4 of 8 atoms shipped
-- **Autonomous Atom 2 progress (most-recent first):**
-  - **2.4 — `actual_star_count` (commit a38edd5):** density-jittered integer math, 4 unit tests, [-10%, +10%] jitter, clamped ≥1. Open question: Tiny+Normal lower bound 29 vs SPEC FR-1 floor of 32 — left for the Atom 2.8 acceptance test to decide.
-  - **2.3 — `random_position` (commit d4701ca):** integer-grid placement via `gen_range`, lossless `u32→f64`, no sqrt, deterministic. Stray files swept in by `git add -A` (.brainstormer/session.json + reference/social-launch-drafts.md) — switched to targeted `git add` going forward, will note in wake-up report.
-  - **2.2 — galaxy.rs star name registry + picker (commit 43c316a):** 50 hand-curated names, deterministic picker with `-N` rotation suffix. Game Design's JSON-list recommendation deferred; First Principles' "no names at all" overruled because `Star.name` is non-optional.
-  - **2.1 — `engine/src/rng.rs` seeded_rng (commit c2821a8):** ChaCha20Rng + hand-rolled FNV-1a domain separation, 9 unit tests. Council unanimous: rng lives in its own module, not at top of galaxy.rs.
-- **Council outcome:** 5-agent round table (Rust + Plan + Performance Engineer + Game Design + First Principles) ran in parallel before any code was written. Convergence: rng.rs as own module; ChaCha20Rng seeded once + threaded `&mut`; pre-allocated Vecs with capacity; manual rejection loop with const retry budget; **squared i64 distances (no sqrt)** — Performance Engineer's most important call, eliminates the FMA / ULP-drift cross-target bug class entirely; merge atoms 2.5+2.6 and 2.7+2.8 → 8-atom sequence (down from 10).
-- **Current state:** 51 unit + 2 integration tests pass, sniff green at every push, CI green on commit a38edd5. Sync milestone reached after 2.4 per council-revised cadence. Next: 2.5 (place_one_star + place_all_stars merged), 2.6 (Galaxy struct + generate_galaxy merged), 2.7 (extend determinism fingerprint), 2.8 (FR-1 acceptance test), then closing Paladin + Crucible per the brief Step 5.
+- **Date:** 2026-04-08 (post-Atom-2 deep audit + Atom A hardening interlude)
+- **Phase:** 1 — Atom 2 (`engine/src/galaxy.rs`) **COMPLETE**; Atom A hardening interlude **IN PROGRESS**.
+- **Atom 2 outcome:** 10 sub-atoms shipped autonomously (2.1–2.8 + P0 fixes 2.9+2.10), **67 tests passing** (61 unit + 2 determinism + 4 FR-1 acceptance), 4/4 sniff gates green on every push, CI green on `2237138`. Atom 2.9 changed the `actual_star_count` jitter from symmetric `[-10%, +10%]` to asymmetric `[0, +20%]` to hit the then-SPEC FR-1 floor of 32 (now invalidated — see Atom A below). Atom 2.10 widened the determinism fingerprint from endpoint sampling to full-vec walk (`499 → 1485` hex bytes). Crucible verdict logged six P1s and four P2s in `docs/codeglass/CRUCIBLE-VERDICT-atom-2.md`.
+- **Deep audit (2026-04-08 morning):** parallel Explore agents verified reality against the BACKLOG/CONTEXT claims. Sniff green live. No Atom 3 plan document exists (BACKLOG.md was speaking in future tense about planned Atom 3.0 sub-atoms). 4 of the 6 P1s still open in code. Cairntir `stars-2026` MCP wing is broken (embedding dimension mismatch 64 vs 384 — needs `cairntir init --user --force`).
+- **Patrick decisions locked 2026-04-08:**
+  - **P1-9** Tiny galaxy star count = **24** (Stars! 1995 canon), NOT 32. SPEC FR-1 amended in commit `860ead4`. Atom 2.9 jitter math is invalidated and re-derived in Atom A.4.
+  - **P1-1** STAR_NAMES migrates **straight to `data/star_names.json`** — no interim "shrink to 12 const" step. Loader receives the list as an argument to `generate_galaxy` (keeps seed→galaxy mapping pure).
+  - **Atom order:** A (hardening interlude) → B (wasm-bindgen-test cross-target fingerprint, the P1-2 determinism reckoning) → C (Atom 3 = `planet.rs` proper with 5-agent council).
+- **Atom A scope (13 sub-atoms, mechanical, no council):**
+  - **A.1 + A.2 (commit `860ead4`):** SPEC.md FR-1 → 24–100 stars; new "Deviations from 1995 canon" section with D-1 (tech cap 30) and D-2 (Tiny=24).
+  - **A.3 (in progress):** governance sync of CLAUDE.md + CONTEXT.md stale blocks.
+  - **A.4:** re-derive `actual_star_count` generator against Tiny=24 floor (only Tiny changes — Small/Medium/Large/Huge bases stay).
+  - **A.5:** `fr1_galaxy.rs` envelope update + `determinism.rs` fingerprint re-pin.
+  - **A.6:** `data/star_names.json` + loader; STAR_NAMES const deleted; name list passed as argument to `generate_galaxy`.
+  - **A.7:** exact-pin `rand` + `rand_chacha` in Cargo.toml.
+  - **A.8:** `docs/FORMULAS.md` stub + cite `min_star_distance` constants.
+  - **A.9:** upgrade `GameError::GalaxyGenerationFailed` to struct variant.
+  - **A.10:** FNV-1a per-subsystem test vectors.
+  - **A.11:** Huge+Packed saturation stress test.
+  - **A.12:** BACKLOG.md update (close resolved P1s; P1-6 pre-commit hook stays as a TODO note).
+  - **A.13:** ADR-0003 documenting the Atom A pass + governance sync commit.
 
 #### Frozen prior session block
 
