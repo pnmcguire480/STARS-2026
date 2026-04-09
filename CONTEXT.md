@@ -51,10 +51,9 @@ The single most important property the brief asked for — **every commit on mai
 ---
 
 ## Now
-- **Date:** 2026-04-08 (post-audit, Atom A hardening interlude in progress)
-- **Phase:** 1 — Atom 2 **COMPLETE** (10 sub-atoms, 67 tests green, CI green on `2237138`). Atom A hardening interlude **IN PROGRESS** (A.1+A.2 landed as `860ead4`, A.3 governance sync next).
-- **Active task:** Atom A — 13-sub-atom mechanical hardening pass closing cheap Crucible P1s and re-deriving Atom 2.9 generator math against the P1-9 decision (Tiny=24 canon, not 32 SPEC). Full scope in CLAUDE.md "Last Session" block. Atom order locked: A → B (wasm-bindgen-test cross-target fingerprint) → C (Atom 3 = `planet.rs` full council).
-- **Active task (frozen, pre-audit):** Atom 2 autonomous sleep-shift — closed 10/10 sub-atoms + P0 fixes 2.9+2.10 per the session brief, closing Paladin + Crucible ran, 67 tests passing, wake-up report at the top of this file.
+- **Date:** 2026-04-09 (Atom A closed, Atom B starting)
+- **Phase:** 1 — Atom 2 **COMPLETE**, Atom A **COMPLETE** (13 sub-atoms, 7 of 9 Crucible P1s closed, 72 tests, ADR-0003 documents the pass). Atom B (wasm-bindgen-test cross-target fingerprint) **STARTING**.
+- **Active task:** Atom B — the single highest-risk deferred item: prove that the 1204-byte determinism fingerprint is byte-identical between wasm32 and native targets. The entire determinism contract (FR-16 save/load, FR-31 multiplayer replay) is theater until this lands. Mini-council needed: Rust + Performance Engineer + Plan.
 - **Blocker:** Cairntir `stars-2026` MCP wing is broken (embedding dimension mismatch 64 vs 384) — needs `cairntir init --user --force` out-of-band. Critical decisions backed up to auto-memory as a fallback.
 
 ## Just Finished
