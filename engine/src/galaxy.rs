@@ -208,7 +208,7 @@ pub fn random_position(
 ///
 /// # Algorithm
 ///
-/// 1. `base = size.target_stars()` (e.g. 32 for Tiny).
+/// 1. `base = size.target_stars()` (e.g. 24 for Tiny — canon floor per SPEC D-2).
 /// 2. `density_scale` is a fixed integer percentage per density:
 ///    - `Sparse`  → 75 (-25%)
 ///    - `Normal`  → 100 (no change)
@@ -219,34 +219,29 @@ pub fn random_position(
 ///    drawn from one `u64` of the supplied RNG. The lower bound is 0
 ///    (not negative) so the generator never produces fewer stars than
 ///    `base * density_scale / 100` — this is what makes the SPEC FR-1
-///    floor of 32 stars hold for `(Tiny, Normal)` deterministically
-///    across every seed. The Atom 2 closing Crucible flagged the
-///    earlier symmetric `[-10, +10]` jitter as a SPEC FR-1 violation
-///    (worst case 29 stars vs SPEC floor of 32); this asymmetric form
-///    is the in-session P0 fix.
+///    floor (24 for Tiny) hold for `(Tiny, Normal)` deterministically
+///    across every seed. The Atom 2 closing Crucible flagged an earlier
+///    symmetric `[-10, +10]` jitter as a SPEC FR-1 violation (worst
+///    case below the floor); this asymmetric form was the in-session
+///    P0 fix (Atom 2.9).
 /// 5. The final value is clamped to `[1, u32::MAX]` to guarantee at
 ///    least one star regardless of how aggressively the inputs scale
 ///    downward.
 ///
-/// All arithmetic is integer; no `f64` enters the count path. The
-/// jitter percentage is bounded so the result for `(Tiny, Normal)` —
-/// `target_stars() = 32` — lands inside `[28, 35]`, comfortably within
-/// the FR-1 floor of 32 stars when the jitter rounds up. The
-/// `actual_star_count_tiny_normal_satisfies_fr1` test below pins this
-/// across 100 random seeds.
+/// All arithmetic is integer; no `f64` enters the count path. For
+/// `(Tiny, Normal)` with `target_stars() = 24` the result lands inside
+/// `[24, 28]` every seed, comfortably satisfying the new SPEC FR-1
+/// range of `[24, 100]`. The `actual_star_count_tiny_normal_satisfies_fr1`
+/// test below pins this across 100 random seeds.
 ///
-/// **Note on FR-1 vs canon:** the Game Design council flagged that
-/// canonical Stars! Tiny is 24 stars, but `GalaxySize::Tiny.target_stars()`
-/// returns 32 to match SPEC FR-1 ("32–100 stars for v0.1"). This atom
-/// honors the SPEC value; reconciling the SPEC and the canon is a
-/// deferred question for Patrick.
-///
-/// **Asymmetric jitter (Atom 2.9 P0 fix):** the closing Crucible
-/// surfaced that an earlier symmetric `[-10, +10]` jitter could
-/// produce 29 stars on a worst-case seed, below the SPEC FR-1 floor
-/// of 32. The jitter is now `[0, +20]` so `actual_star_count` is
-/// always `>= base * density_scale / 100`. For `(Tiny, Normal)` that
-/// is `32 * 100 / 100 = 32`, hitting the SPEC floor on every seed.
+/// **SPEC FR-1 and canon agree (Atom A, 2026-04-08):** an earlier draft
+/// of FR-1 specified a Tiny floor of 32, which conflicted with the
+/// Stars! 1995 canon value of 24. SPEC was amended to 24 (see SPEC.md
+/// "Deviations from 1995 canon", D-2). `GalaxySize::Tiny.target_stars()`
+/// now returns 24. The asymmetric `[0, +20]` jitter (Atom 2.9 P0 fix)
+/// was originally calibrated to hit the old 32 floor; with the base at
+/// 24, the same jitter shape guarantees `>= 24` for Normal density
+/// without further re-derivation.
 #[must_use]
 pub fn actual_star_count(
     size: crate::types::GalaxySize,
@@ -614,11 +609,11 @@ mod tests {
 
     #[test]
     fn actual_star_count_tiny_normal_satisfies_fr1() {
-        // FR-1 says v0.1 ships with "32–100 stars (Tiny size)". With
-        // Normal density and the asymmetric [0, +20] jitter on a
-        // 32-star base, the count sits in [32, 38]. The Atom 2.9 P0
-        // fix changed the jitter from symmetric [-10, +10] to honor
-        // the SPEC floor on every seed.
+        // FR-1 (amended 2026-04-08 per SPEC D-2) says v0.1 ships with
+        // "24–100 stars (Tiny size)". With Normal density and the
+        // asymmetric [0, +20] jitter on a 24-star base, the count sits
+        // in [24, 28]. The Atom 2.9 P0 fix's asymmetric jitter shape
+        // still guarantees the floor; only the base changed.
         for seed in 0..100u64 {
             let mut rng = seeded_rng(seed, 0, PlayerId(0), "galaxy");
             let count = actual_star_count(
@@ -627,8 +622,8 @@ mod tests {
                 &mut rng,
             );
             assert!(
-                (32..=100).contains(&count),
-                "Tiny+Normal seed {seed} produced {count}, outside SPEC FR-1 [32, 100]"
+                (24..=100).contains(&count),
+                "Tiny+Normal seed {seed} produced {count}, outside SPEC FR-1 [24, 100]"
             );
         }
     }
@@ -729,8 +724,8 @@ mod tests {
     fn place_all_stars_produces_correct_count_and_unique_ids() {
         let mut rng = seeded_rng(42, 0, PlayerId(0), "galaxy");
         let stars =
-            place_all_stars(&mut rng, 32, 400, 30.0).expect("Tiny galaxy must place 32 stars");
-        assert_eq!(stars.len(), 32);
+            place_all_stars(&mut rng, 24, 400, 30.0).expect("Tiny galaxy must place 24 stars");
+        assert_eq!(stars.len(), 24);
         for (i, s) in stars.iter().enumerate() {
             assert_eq!(s.id.0 as usize, i);
         }
@@ -739,7 +734,7 @@ mod tests {
     #[test]
     fn place_all_stars_pairwise_distance_constraint() {
         let mut rng = seeded_rng(99, 0, PlayerId(0), "galaxy");
-        let stars = place_all_stars(&mut rng, 32, 400, 30.0).expect("Tiny galaxy must succeed");
+        let stars = place_all_stars(&mut rng, 24, 400, 30.0).expect("Tiny galaxy must succeed");
         let min_d2: i64 = 30 * 30;
         for i in 0..stars.len() {
             for j in (i + 1)..stars.len() {

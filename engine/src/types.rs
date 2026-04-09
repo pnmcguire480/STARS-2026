@@ -492,7 +492,7 @@ impl GalaxySize {
     #[must_use]
     pub const fn target_stars(self) -> u32 {
         match self {
-            Self::Tiny => 32,
+            Self::Tiny => 24,
             Self::Small => 70,
             Self::Medium => 150,
             Self::Large => 300,
@@ -1689,7 +1689,7 @@ mod tests {
     /// galaxy and invalidates every Scenario.md expected-state assertion.
     #[test]
     fn galaxy_size_preset_target_stars() {
-        assert_eq!(GalaxySize::Tiny.target_stars(), 32);
+        assert_eq!(GalaxySize::Tiny.target_stars(), 24);
         assert_eq!(GalaxySize::Small.target_stars(), 70);
         assert_eq!(GalaxySize::Medium.target_stars(), 150);
         assert_eq!(GalaxySize::Large.target_stars(), 300);

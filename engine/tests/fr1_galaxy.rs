@@ -1,27 +1,27 @@
 //! FR-1 acceptance test — procedural galaxy generation.
 //!
-//! From SPEC.md:
+//! From SPEC.md (amended 2026-04-08, Atom A.1):
 //!
-//! > **FR-1**: Generate a procedural galaxy from a seed (32–100 stars
-//! > for v0.1, "Tiny" size).
+//! > **FR-1**: Generate a procedural galaxy from a seed (24–100 stars
+//! > for v0.1, "Tiny" size). See "Deviations from 1995 canon" — Tiny
+//! > floor is 24 per canon, not 32.
 //!
 //! This integration test pins the FR-1 contract end-to-end against the
 //! public `generate_galaxy` API. It is the canonical user-facing
-//! verification that the eight Atom 2 sub-atoms compose into a working
+//! verification that the Atom 2 sub-atoms compose into a working
 //! galaxy generator: same seed → same galaxy, star count in the FR-1
 //! envelope, and no rejection-sampler explosions across a wide
 //! cross-section of seeds.
 //!
-//! **Calibration note (resolved by Atom 2.9):**
+//! **History (resolved):**
 //!
-//! The original Atom 2.4 jitter was symmetric `[-10, +10]` percent,
-//! which produced worst-case 29 stars on Tiny+Normal — below SPEC
-//! FR-1's stated floor of 32. The Atom 2 closing Crucible flagged
-//! this as a P0 SPEC violation. Atom 2.9 changed the jitter to
-//! `[0, +20]` so `actual_star_count` is always `>= base *
-//! density_scale / 100`. For Tiny+Normal that bottoms out at exactly
-//! 32, hitting the SPEC FR-1 floor on every seed. This test asserts
-//! the SPEC envelope `[32, 100]` directly.
+//! Atom 2.4 shipped a symmetric `[-10, +10]%` jitter which could
+//! under-shoot the then-SPEC floor of 32; Atom 2.9 P0-fixed this by
+//! flipping to asymmetric `[0, +20]%`. Atom A (2026-04-08) then
+//! amended SPEC FR-1 from 32 to 24 (per canon, SPEC D-2) and dropped
+//! `GalaxySize::Tiny.target_stars()` from 32 to 24. The asymmetric
+//! jitter shape is preserved; the floor is now 24. This test asserts
+//! the new SPEC envelope `[24, 100]` directly.
 
 use stars2026_engine::galaxy::generate_galaxy;
 use stars2026_engine::types::{AiDifficulty, GalaxyDensity, GalaxySize, GameSettings};
@@ -40,8 +40,9 @@ fn tiny_normal_settings(seed: u64) -> GameSettings {
 }
 
 /// FR-1 envelope: every Tiny+Normal galaxy across 100 seeds must
-/// produce a star count inside the SPEC FR-1 envelope `[32, 100]`,
-/// and the placement pipeline must never return an error.
+/// produce a star count inside the SPEC FR-1 envelope `[24, 100]`
+/// (amended 2026-04-08), and the placement pipeline must never
+/// return an error.
 #[test]
 fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
     for seed in 0..100u64 {
@@ -50,8 +51,8 @@ fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
             .unwrap_or_else(|e| panic!("FR-1 seed {seed} failed to generate: {e}"));
         let n = galaxy.stars.len();
         assert!(
-            (32..=100).contains(&n),
-            "FR-1 envelope violation: seed {seed} produced {n} stars (expected 32..=100 per SPEC FR-1)"
+            (24..=100).contains(&n),
+            "FR-1 envelope violation: seed {seed} produced {n} stars (expected 24..=100 per SPEC FR-1)"
         );
     }
 }
@@ -84,11 +85,10 @@ fn fr1_determinism_same_seed_same_galaxy() {
 }
 
 /// Calibration observation (NOT a hard FR-1 assertion): the actual
-/// per-seed range produced by Tiny+Normal across 200 seeds. Documents
-/// the deferred-question case from Atom 2.4 — the worst-case lower
-/// bound is currently below the SPEC's stated FR-1 floor of 32. The
-/// test asserts only that the observed range is *narrow enough* to
-/// inform Patrick's morning calibration decision (max - min ≤ 10).
+/// per-seed range produced by Tiny+Normal across 200 seeds. Originally
+/// documented the Atom 2.4 deferred-question case; now preserved as a
+/// tripwire that the jitter shape hasn't drifted. Asserts only that
+/// the observed range is narrow (max - min ≤ 10).
 #[test]
 fn fr1_tiny_normal_observed_range_is_narrow() {
     let mut min = u32::MAX;
