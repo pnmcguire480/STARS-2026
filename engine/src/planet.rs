@@ -164,6 +164,117 @@ pub fn habitability(env: &Environment, hab_ranges: &HabRanges) -> i32 {
     base * ideality / 10000
 }
 
+/// Maximum population a planet can sustain at a given habitability.
+///
+/// Returns `Colonists` where `units()` = hundreds of people. A 100%
+/// hab world holds 1,000,000 people = `Colonists(10000)`. Hab is
+/// floored at 5% for this calculation (even a 1% green world can
+/// hold 50,000 people). Negative or zero hab returns 0 capacity.
+///
+/// The result is floored to the nearest 100 people (matching the
+/// `Colonists` granularity). See `docs/FORMULAS.md` F-5.
+///
+/// # Arguments
+///
+/// - `hab_pct` — the planet's habitability for the owner race (output
+///   of [`habitability`]).
+#[must_use]
+pub fn max_population(hab_pct: i32) -> crate::types::Colonists {
+    use crate::types::Colonists;
+
+    if hab_pct <= 0 {
+        return Colonists::new(0);
+    }
+
+    // Floor hab at 5% for capacity calculation per canon.
+    let effective_hab = hab_pct.max(5);
+
+    // 1,000,000 people at 100% hab = Colonists(10000).
+    // At effective_hab%: 10000 * effective_hab / 100.
+    // Integer division floors to nearest 100 people automatically.
+    #[allow(clippy::cast_sign_loss)]
+    let units = (10000_i32 * effective_hab / 100) as u32;
+    Colonists::new(units)
+}
+
+/// Population growth for one turn (FR-5).
+///
+/// Returns the **signed delta** in `Colonists` units (hundreds of
+/// people). Positive = growth, negative = deaths.
+///
+/// # Cases
+///
+/// 1. **Normal growth (hab > 0, pop ≤ capacity):**
+///    `growth = pop * growth_rate * hab_pct / 10000`, with crowding
+///    penalty applied when pop > 25% of capacity.
+/// 2. **Crowding penalty (pop > 25% of capacity):**
+///    `factor = (16/9) * (1 - ratio)^2` where ratio = pop/capacity.
+///    Uses f64 (safe cross-target per Atom B). At 100% capacity,
+///    factor = 0 (no growth). At 25% capacity, factor = 1.0.
+/// 3. **Hostile worlds (hab < 0):**
+///    `deaths = pop * hab_pct / 1000` (`hab_pct` is negative, so this
+///    returns a negative delta). E.g. -10 hab ≈ 1% death per turn.
+/// 4. **Overcrowding (pop > capacity):**
+///    `dieoff = clamp((ratio - 1) * 0.04, 0, 0.12)`, then
+///    `deaths = -pop * dieoff`. Caps at 12% death per turn.
+///
+/// **Rounding:** truncation (floor toward zero) per Patrick decision
+/// 2026-04-09, matching Stars! 1995 canon. See `docs/FORMULAS.md` F-5.
+///
+/// # Arguments
+///
+/// - `pop` — current planet population.
+/// - `hab_pct` — habitability for the owner race (-45 to +100).
+/// - `growth_rate` — the race's chosen growth rate (integer, e.g. 15
+///   for 15%). Set during race creation.
+#[must_use]
+#[allow(clippy::cast_precision_loss)] // pop units ≤ ~100_000 (10M people / 100), well within f64 mantissa
+pub fn population_growth(pop: crate::types::Colonists, hab_pct: i32, growth_rate: u32) -> i64 {
+    let pop_units = i64::from(pop.units());
+
+    if pop_units == 0 {
+        return 0;
+    }
+
+    // ── Hostile worlds: population dies ──────────────────────────
+    if hab_pct < 0 {
+        // deaths = pop * hab_pct / 1000 (hab_pct is negative → negative result)
+        return pop_units * i64::from(hab_pct) / 1000;
+    }
+
+    let max_pop = max_population(hab_pct);
+    let max_units = i64::from(max_pop.units());
+
+    // Guard: if max_pop is 0 (hab_pct == 0), no growth possible.
+    if max_units == 0 {
+        return 0;
+    }
+
+    // ── Overcrowding: population dies ───────────────────────────
+    if pop_units > max_units {
+        let ratio = pop_units as f64 / max_units as f64;
+        let dieoff = ((ratio - 1.0) * 0.04).clamp(0.0, 0.12);
+        // Negative delta (deaths). Truncate toward zero.
+        #[allow(clippy::cast_possible_truncation)]
+        let deaths = -(pop_units as f64 * dieoff) as i64;
+        return deaths;
+    }
+
+    // ── Normal growth ───────────────────────────────────────────
+    let mut growth = pop_units * i64::from(growth_rate) * i64::from(hab_pct) / 10000;
+
+    // ── Crowding penalty (above 25% capacity) ───────────────────
+    let ratio = pop_units as f64 / max_units as f64;
+    if ratio > 0.25 {
+        let crowding_factor = (16.0 / 9.0) * (1.0 - ratio).powi(2);
+        #[allow(clippy::cast_possible_truncation)]
+        let crowded = (growth as f64 * crowding_factor) as i64;
+        growth = crowded;
+    }
+
+    growth
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,6 +487,137 @@ mod tests {
         let hab = ranges((10, 90), (20, 80), (5, 50));
         let a = habitability(&env, &hab);
         let b = habitability(&env, &hab);
+        assert_eq!(a, b);
+    }
+
+    // ─── C.3 tests: max_population ─────────────────────────────────
+
+    #[test]
+    fn max_pop_100_percent_is_one_million() {
+        let cap = max_population(100);
+        assert_eq!(cap.units(), 10000); // 10000 * 100 people = 1,000,000
+    }
+
+    #[test]
+    fn max_pop_50_percent_is_500k() {
+        let cap = max_population(50);
+        assert_eq!(cap.units(), 5000);
+    }
+
+    #[test]
+    fn max_pop_negative_hab_is_zero() {
+        assert_eq!(max_population(-10).units(), 0);
+        assert_eq!(max_population(-45).units(), 0);
+    }
+
+    #[test]
+    fn max_pop_zero_hab_is_zero() {
+        assert_eq!(max_population(0).units(), 0);
+    }
+
+    #[test]
+    fn max_pop_low_hab_floored_at_5_percent() {
+        // 1% and 4% both floor to 5% for capacity: 10000 * 5 / 100 = 500
+        assert_eq!(max_population(1).units(), 500);
+        assert_eq!(max_population(4).units(), 500);
+        assert_eq!(max_population(5).units(), 500);
+    }
+
+    // ─── C.4 + C.5 tests: population_growth ────────────────────────
+
+    use crate::types::Colonists;
+
+    #[test]
+    fn zero_pop_zero_growth() {
+        assert_eq!(population_growth(Colonists::new(0), 100, 15), 0);
+    }
+
+    #[test]
+    fn normal_growth_small_pop() {
+        // 1000 people (units=10), 100% hab, 15% growth rate.
+        // growth = 10 * 15 * 100 / 10000 = 1 (truncated).
+        let delta = population_growth(Colonists::new(10), 100, 15);
+        assert_eq!(delta, 1);
+    }
+
+    #[test]
+    fn normal_growth_larger_pop() {
+        // 100,000 people (units=1000), 80% hab, 15% growth.
+        // uncrowded = 1000 * 15 * 80 / 10000 = 120.
+        // capacity = max_pop(80) = 8000. ratio = 1000/8000 = 0.125 < 0.25.
+        // No crowding penalty. Growth = 120.
+        let delta = population_growth(Colonists::new(1000), 80, 15);
+        assert_eq!(delta, 120);
+    }
+
+    #[test]
+    fn crowding_reduces_growth() {
+        // 500,000 people (units=5000), 100% hab, 15% growth.
+        // uncrowded = 5000 * 15 * 100 / 10000 = 750.
+        // capacity = 10000. ratio = 0.5 > 0.25 → crowding.
+        // factor = (16/9) * (1 - 0.5)^2 = (16/9) * 0.25 = 0.4444
+        // growth = 750 * 0.4444 = 333 (truncated).
+        let delta = population_growth(Colonists::new(5000), 100, 15);
+        assert!(
+            delta > 0 && delta < 750,
+            "crowded growth should be positive but less than uncrowded 750, got {delta}"
+        );
+    }
+
+    #[test]
+    fn at_capacity_zero_growth() {
+        // 1,000,000 people (units=10000), 100% hab, 15% growth.
+        // ratio = 1.0 → crowding factor = (16/9) * 0 = 0. Growth = 0.
+        let delta = population_growth(Colonists::new(10000), 100, 15);
+        assert_eq!(delta, 0);
+    }
+
+    #[test]
+    fn hostile_world_kills_population() {
+        // 100,000 people (units=1000), -10 hab.
+        // deaths = 1000 * -10 / 1000 = -10.
+        let delta = population_growth(Colonists::new(1000), -10, 15);
+        assert_eq!(delta, -10);
+    }
+
+    #[test]
+    fn max_hostile_kills_fast() {
+        // -45 hab: deaths = 1000 * -45 / 1000 = -45.
+        let delta = population_growth(Colonists::new(1000), -45, 15);
+        assert_eq!(delta, -45);
+    }
+
+    #[test]
+    fn overcrowding_kills_proportionally() {
+        // 2,000,000 people (units=20000) on a 100% hab world (cap=10000).
+        // ratio = 2.0. dieoff = (2.0-1.0)*0.04 = 0.04.
+        // deaths = -(20000 * 0.04) = -800.
+        let delta = population_growth(Colonists::new(20000), 100, 15);
+        assert!(
+            delta < 0,
+            "overcrowded planet should have negative growth, got {delta}"
+        );
+        assert!(
+            delta >= -2400, // max 12% of 20000 = 2400
+            "overcrowding death should be capped, got {delta}"
+        );
+    }
+
+    #[test]
+    fn overcrowding_death_capped_at_12_percent() {
+        // Massively overcrowded: 5x capacity.
+        // dieoff = (5.0-1.0)*0.04 = 0.16 → clamped to 0.12.
+        // deaths = -(50000 * 0.12) = -6000.
+        let delta = population_growth(Colonists::new(50000), 100, 15);
+        #[allow(clippy::cast_possible_truncation)]
+        let max_death = -(50000.0 * 0.12) as i64;
+        assert_eq!(delta, max_death);
+    }
+
+    #[test]
+    fn growth_is_deterministic() {
+        let a = population_growth(Colonists::new(3000), 75, 15);
+        let b = population_growth(Colonists::new(3000), 75, 15);
         assert_eq!(a, b);
     }
 }
