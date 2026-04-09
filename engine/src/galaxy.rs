@@ -43,121 +43,72 @@
 /// names), it suffixes a numeric tag — `"Vega-2"`, `"Vega-3"`, etc. —
 /// per the Stars! 1995 fallback behavior the Game Design council
 /// documented from `wiki.starsautohost.org`.
-const STAR_NAMES: &[&str] = &[
-    "Vega",
-    "Antares",
-    "Procyon",
-    "Sirius",
-    "Aldebaran",
-    "Betelgeuse",
-    "Rigel",
-    "Polaris",
-    "Arcturus",
-    "Capella",
-    "Altair",
-    "Deneb",
-    "Castor",
-    "Pollux",
-    "Spica",
-    "Regulus",
-    "Bellatrix",
-    "Mintaka",
-    "Alnilam",
-    "Alnitak",
-    "Saiph",
-    "Hadar",
-    "Atria",
-    "Mira",
-    "Algol",
-    "Thuban",
-    "Mizar",
-    "Alcor",
-    "Dubhe",
-    "Merak",
-    "Phecda",
-    "Megrez",
-    "Alioth",
-    "Alkaid",
-    "Acrux",
-    "Mimosa",
-    "Gacrux",
-    "Avior",
-    "Miaplacidus",
-    "Alphard",
-    "Thor",
-    "Loki",
-    "Odin",
-    "Freya",
-    "Tyr",
-    "Quetzalcoatl",
-    "Kukulkan",
-    "Xochiquetzal",
-    "Mictlan",
-    "Tezcatlipoca",
-];
-
-/// Total number of canonical names available before the numeric-suffix
-/// fallback kicks in. Exposed as a `pub(crate) const u32` so tests and
-/// future atoms can reason about exhaustion thresholds without
-/// duplicating the magic number, and so the value composes with
-/// `pick_index: u32` without truncation casts on either target.
+/// Pick a star name from a caller-supplied list using one `u64` draw
+/// from the supplied RNG, with a numeric suffix when the same base name
+/// has already been issued in this galaxy.
 ///
-/// Hand-coded to match `STAR_NAMES.len()`. The compile-time assertion
-/// below makes drift impossible.
-pub(crate) const STAR_NAME_COUNT: u32 = 50;
-
-const _: () = assert!(
-    STAR_NAMES.len() == STAR_NAME_COUNT as usize,
-    "STAR_NAME_COUNT must equal STAR_NAMES.len() — bump the const when adding names"
-);
-
-/// Pick a star name from the canonical list using one `u64` draw from
-/// the supplied RNG, with a numeric suffix when the same base name has
-/// already been issued in this galaxy.
-///
+/// `names` is the canonical name list, owned by the caller (loaded via
+/// [`crate::data::load_star_names`] or supplied directly in tests).
 /// `pick_index` is the **issue order** of this star (0 for the first
 /// star placed, 1 for the second, …) — the picker uses it to compute a
 /// suffix when the rotation wraps. Specifically:
 ///
-/// - The first `STAR_NAME_COUNT` stars get the bare canonical name
+/// - The first `names.len()` stars get the bare canonical name
 ///   (`"Vega"`, `"Antares"`, …) in RNG-shuffled order.
 /// - Subsequent stars get the same shuffled name with a `-2`, `-3`, …
 ///   suffix indicating which rotation they belong to.
 ///
 /// The shuffle is done implicitly: each call draws one `u64` from the
-/// RNG and indexes the list at `(draw % STAR_NAME_COUNT)`. This is
+/// RNG and indexes the list at `(draw % names.len())`. This is
 /// modulo-biased in theory (the bias is roughly 1 in 2^58 for a 50-name
 /// list, so it cannot be detected by any test we will ever write), and
 /// it has the property that two consecutive picks **can** collide on the
 /// same base name — which is exactly what the suffix counter handles.
 ///
+/// # Panics
+///
+/// Panics if `names` is empty. Callers must provide a non-empty list;
+/// [`crate::data::load_star_names`] guarantees this.
+///
 /// # Determinism
 ///
-/// Same `(rng_state, pick_index)` → same returned `String`. The function
-/// is byte-identical wasm/native because it uses only integer modulo and
-/// integer-to-string formatting (no `f64`, no allocator-order leaks).
+/// Same `(rng_state, names, pick_index)` → same returned `String`. The
+/// function is byte-identical wasm/native because it uses only integer
+/// modulo and integer-to-string formatting (no `f64`, no allocator-order
+/// leaks). Output is a function of `names.len()` (not the identity of
+/// `names`), so passing a different list of the same length produces a
+/// different galaxy — which is exactly the determinism contract: the
+/// name list is an explicit input.
 #[must_use]
-pub fn pick_star_name(rng: &mut rand_chacha::ChaCha20Rng, pick_index: u32) -> String {
+pub fn pick_star_name(
+    rng: &mut rand_chacha::ChaCha20Rng,
+    names: &[String],
+    pick_index: u32,
+) -> String {
     use rand::RngCore;
 
+    assert!(!names.is_empty(), "pick_star_name requires non-empty names");
+    let len_u32 = u32::try_from(names.len()).expect("names.len() must fit in u32");
+
     let draw = rng.next_u64();
-    // The modulo result is bounded by STAR_NAME_COUNT (50), so the
-    // u64 → usize cast is mathematically lossless on every target the
-    // engine compiles to (32-bit wasm and 64-bit native both have
-    // `usize >= 50`). The cast lint is silenced locally with a
-    // justifying comment per the project policy on `#[allow]`.
+    // The modulo result is bounded by `names.len()` (≤ u32::MAX by
+    // the try_from above), so the u64 → usize cast is mathematically
+    // lossless on every target the engine compiles to (32-bit wasm and
+    // 64-bit native both have `usize >= u32::MAX`). The cast lint is
+    // silenced locally with a justifying comment per the project
+    // policy on `#[allow]`.
     #[allow(
         clippy::cast_possible_truncation,
-        reason = "modulo result < STAR_NAME_COUNT (50), always fits in usize"
+        reason = "modulo result < names.len() (u32-bounded), always fits in usize"
     )]
-    let base_idx = (draw % u64::from(STAR_NAME_COUNT)) as usize;
-    let base = STAR_NAMES[base_idx];
+    let base_idx = (draw % u64::from(len_u32)) as usize;
+    let base = &names[base_idx];
 
-    // The first STAR_NAME_COUNT picks get the bare name; subsequent
+    // The first `names.len()` picks get the bare name; subsequent
     // picks get a `-N` suffix where N is the rotation count plus one.
-    let rotation = pick_index / STAR_NAME_COUNT;
+    let rotation = pick_index / len_u32;
     if rotation == 0 {
-        base.to_string()
+        base.clone()
     } else {
         format!("{base}-{}", rotation + 1)
     }
@@ -382,6 +333,7 @@ fn squared_distance(a: &crate::types::Position, b: &crate::types::Position) -> i
 /// `dimension` and `min_distance` to fit without overlap.
 pub fn place_all_stars(
     rng: &mut rand_chacha::ChaCha20Rng,
+    names: &[String],
     count: u32,
     dimension: u32,
     min_distance: f64,
@@ -404,7 +356,7 @@ pub fn place_all_stars(
     for i in 0..count {
         let pos = place_one_star(rng, &positions, dimension, min_distance_squared)?;
         positions.push(pos);
-        let name = pick_star_name(rng, i);
+        let name = pick_star_name(rng, names, i);
         stars.push(Star {
             id: StarId(i),
             name,
@@ -474,10 +426,19 @@ const fn min_star_distance(density: crate::types::GalaxyDensity) -> f64 {
 
 /// Top-level galaxy generator.
 ///
-/// Generates a complete `Galaxy` from a `GameSettings`, threading the
-/// master `random_seed` through `seeded_rng` with the `"galaxy"`
-/// subsystem tag. Same `GameSettings` → same `Galaxy`, byte-identical,
+/// Generates a complete `Galaxy` from a `GameSettings` + a caller-
+/// supplied `star_names` list, threading the master `random_seed`
+/// through `seeded_rng` with the `"galaxy"` subsystem tag. Same
+/// `(GameSettings, star_names)` → same `Galaxy`, byte-identical,
 /// forever.
+///
+/// The `star_names` argument is usually the result of
+/// [`crate::data::load_star_names`], but any non-empty slice works
+/// (tests sometimes pass tiny lists to exercise the rotation-suffix
+/// code path). The name list is an **explicit input** to the
+/// determinism contract: the same seed with different name lists
+/// produces different galaxies, and that is intentional — it is the
+/// price of the DLC-as-JSON promise (P1-1 resolution, 2026-04-08).
 ///
 /// # Algorithm
 ///
@@ -499,6 +460,7 @@ const fn min_star_distance(density: crate::types::GalaxyDensity) -> f64 {
 /// star count within the per-density minimum spacing on the map.
 pub fn generate_galaxy(
     settings: &crate::types::GameSettings,
+    star_names: &[String],
 ) -> Result<Galaxy, crate::types::GameError> {
     use crate::rng::seeded_rng;
     use crate::types::PlayerId;
@@ -507,7 +469,7 @@ pub fn generate_galaxy(
     let count = actual_star_count(settings.galaxy_size, settings.density, &mut rng);
     let dimension = settings.galaxy_size.map_dimension();
     let min_distance = min_star_distance(settings.density);
-    let stars = place_all_stars(&mut rng, count, dimension, min_distance)?;
+    let stars = place_all_stars(&mut rng, star_names, count, dimension, min_distance)?;
 
     Ok(Galaxy {
         stars,
@@ -523,29 +485,32 @@ mod tests {
     use crate::rng::seeded_rng;
     use crate::types::PlayerId;
 
-    #[test]
-    fn star_name_count_matches_array_length() {
-        // Tripwire mirroring the module-level `const _: () = assert!(...)`.
-        // The const-context check is the load-bearing one (compile-fail
-        // if drift), and this runtime test exists so the failure mode
-        // appears in the test report rather than as a cryptic build
-        // error if a contributor splits the change across atoms.
-        assert_eq!(STAR_NAME_COUNT as usize, STAR_NAMES.len());
+    /// Load the canonical star name list for tests. Wraps
+    /// `crate::data::load_star_names()` so tests don't have to unwrap
+    /// every call site. Safe because the bundled JSON is known-good
+    /// (the `data::tests` module verifies this on every run).
+    fn test_names() -> Vec<String> {
+        crate::data::load_star_names().expect("bundled star_names.json must parse")
     }
 
     #[test]
     fn same_rng_state_picks_same_name() {
         // Determinism contract: identical inputs → identical output.
+        let names = test_names();
         let mut rng_a = seeded_rng(42, 0, PlayerId(0), "galaxy");
         let mut rng_b = seeded_rng(42, 0, PlayerId(0), "galaxy");
-        assert_eq!(pick_star_name(&mut rng_a, 0), pick_star_name(&mut rng_b, 0));
+        assert_eq!(
+            pick_star_name(&mut rng_a, &names, 0),
+            pick_star_name(&mut rng_b, &names, 0)
+        );
     }
 
     #[test]
     fn first_rotation_returns_bare_name() {
-        // pick_index < STAR_NAME_COUNT → no suffix.
+        // pick_index < names.len() → no suffix.
+        let names = test_names();
         let mut rng = seeded_rng(1, 0, PlayerId(0), "galaxy");
-        let name = pick_star_name(&mut rng, 0);
+        let name = pick_star_name(&mut rng, &names, 0);
         assert!(
             !name.contains('-'),
             "first-rotation name must not contain a suffix dash, got {name}"
@@ -554,9 +519,11 @@ mod tests {
 
     #[test]
     fn second_rotation_appends_dash_two() {
-        // pick_index == STAR_NAME_COUNT → suffix `-2`.
+        // pick_index == names.len() → suffix `-2`.
+        let names = test_names();
+        let len = u32::try_from(names.len()).unwrap();
         let mut rng = seeded_rng(1, 0, PlayerId(0), "galaxy");
-        let name = pick_star_name(&mut rng, STAR_NAME_COUNT);
+        let name = pick_star_name(&mut rng, &names, len);
         assert!(
             name.ends_with("-2"),
             "second-rotation name must end in -2, got {name}"
@@ -565,8 +532,10 @@ mod tests {
 
     #[test]
     fn third_rotation_appends_dash_three() {
+        let names = test_names();
+        let len = u32::try_from(names.len()).unwrap();
         let mut rng = seeded_rng(1, 0, PlayerId(0), "galaxy");
-        let name = pick_star_name(&mut rng, STAR_NAME_COUNT * 2);
+        let name = pick_star_name(&mut rng, &names, len * 2);
         assert!(
             name.ends_with("-3"),
             "third-rotation name must end in -3, got {name}"
@@ -722,9 +691,10 @@ mod tests {
 
     #[test]
     fn place_all_stars_produces_correct_count_and_unique_ids() {
+        let names = test_names();
         let mut rng = seeded_rng(42, 0, PlayerId(0), "galaxy");
-        let stars =
-            place_all_stars(&mut rng, 24, 400, 30.0).expect("Tiny galaxy must place 24 stars");
+        let stars = place_all_stars(&mut rng, &names, 24, 400, 30.0)
+            .expect("Tiny galaxy must place 24 stars");
         assert_eq!(stars.len(), 24);
         for (i, s) in stars.iter().enumerate() {
             assert_eq!(s.id.0 as usize, i);
@@ -733,8 +703,10 @@ mod tests {
 
     #[test]
     fn place_all_stars_pairwise_distance_constraint() {
+        let names = test_names();
         let mut rng = seeded_rng(99, 0, PlayerId(0), "galaxy");
-        let stars = place_all_stars(&mut rng, 24, 400, 30.0).expect("Tiny galaxy must succeed");
+        let stars =
+            place_all_stars(&mut rng, &names, 24, 400, 30.0).expect("Tiny galaxy must succeed");
         let min_d2: i64 = 30 * 30;
         for i in 0..stars.len() {
             for j in (i + 1)..stars.len() {
@@ -749,10 +721,11 @@ mod tests {
 
     #[test]
     fn place_all_stars_deterministic() {
+        let names = test_names();
         let mut a = seeded_rng(7, 0, PlayerId(0), "galaxy");
         let mut b = seeded_rng(7, 0, PlayerId(0), "galaxy");
-        let stars_a = place_all_stars(&mut a, 16, 400, 30.0).unwrap();
-        let stars_b = place_all_stars(&mut b, 16, 400, 30.0).unwrap();
+        let stars_a = place_all_stars(&mut a, &names, 16, 400, 30.0).unwrap();
+        let stars_b = place_all_stars(&mut b, &names, 16, 400, 30.0).unwrap();
         assert_eq!(stars_a.len(), stars_b.len());
         for (sa, sb) in stars_a.iter().zip(stars_b.iter()) {
             assert_eq!(sa.id, sb.id);
@@ -777,8 +750,9 @@ mod tests {
 
     #[test]
     fn generate_galaxy_returns_populated_struct() {
+        let names = test_names();
         let settings = tiny_normal_settings(0x00C0_FFEE);
-        let galaxy = generate_galaxy(&settings).expect("Tiny+Normal must generate");
+        let galaxy = generate_galaxy(&settings, &names).expect("Tiny+Normal must generate");
         assert!(!galaxy.stars.is_empty());
         assert_eq!(galaxy.size, crate::types::GalaxySize::Tiny);
         assert_eq!(galaxy.density, crate::types::GalaxyDensity::Normal);
@@ -787,9 +761,10 @@ mod tests {
 
     #[test]
     fn generate_galaxy_deterministic() {
+        let names = test_names();
         let settings = tiny_normal_settings(123_456_789);
-        let g1 = generate_galaxy(&settings).unwrap();
-        let g2 = generate_galaxy(&settings).unwrap();
+        let g1 = generate_galaxy(&settings, &names).unwrap();
+        let g2 = generate_galaxy(&settings, &names).unwrap();
         assert_eq!(g1.stars.len(), g2.stars.len());
         for (a, b) in g1.stars.iter().zip(g2.stars.iter()) {
             assert_eq!(a.id, b.id);
@@ -801,8 +776,9 @@ mod tests {
 
     #[test]
     fn generate_galaxy_different_seeds_produce_different_galaxies() {
-        let g1 = generate_galaxy(&tiny_normal_settings(1)).unwrap();
-        let g2 = generate_galaxy(&tiny_normal_settings(2)).unwrap();
+        let names = test_names();
+        let g1 = generate_galaxy(&tiny_normal_settings(1), &names).unwrap();
+        let g2 = generate_galaxy(&tiny_normal_settings(2), &names).unwrap();
         // Different seeds should not produce identical position vectors.
         let positions_match = g1.stars.iter().zip(g2.stars.iter()).all(|(a, b)| {
             a.position.x.to_bits() == b.position.x.to_bits()
@@ -813,6 +789,7 @@ mod tests {
 
     #[test]
     fn generate_galaxy_smoke_across_all_density_tiers() {
+        let names = test_names();
         for density in [
             crate::types::GalaxyDensity::Sparse,
             crate::types::GalaxyDensity::Normal,
@@ -821,7 +798,7 @@ mod tests {
         ] {
             let mut settings = tiny_normal_settings(7777);
             settings.density = density;
-            let galaxy = generate_galaxy(&settings)
+            let galaxy = generate_galaxy(&settings, &names)
                 .unwrap_or_else(|e| panic!("density {density:?} failed: {e}"));
             assert!(!galaxy.stars.is_empty(), "density {density:?} empty");
         }
@@ -835,9 +812,10 @@ mod tests {
         // RNG state matches a fresh RNG that drew exactly N u64s.
         use rand::RngCore;
 
+        let names = test_names();
         let mut rng_picker = seeded_rng(7, 0, PlayerId(0), "galaxy");
         for i in 0..10 {
-            let _ = pick_star_name(&mut rng_picker, i);
+            let _ = pick_star_name(&mut rng_picker, &names, i);
         }
 
         let mut rng_baseline = seeded_rng(7, 0, PlayerId(0), "galaxy");

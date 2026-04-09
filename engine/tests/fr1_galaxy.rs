@@ -23,8 +23,13 @@
 //! jitter shape is preserved; the floor is now 24. This test asserts
 //! the new SPEC envelope `[24, 100]` directly.
 
+use stars2026_engine::data::load_star_names;
 use stars2026_engine::galaxy::generate_galaxy;
 use stars2026_engine::types::{AiDifficulty, GalaxyDensity, GalaxySize, GameSettings};
+
+fn names() -> Vec<String> {
+    load_star_names().expect("bundled star_names.json must parse")
+}
 
 fn tiny_normal_settings(seed: u64) -> GameSettings {
     GameSettings {
@@ -45,9 +50,10 @@ fn tiny_normal_settings(seed: u64) -> GameSettings {
 /// return an error.
 #[test]
 fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
+    let star_names = names();
     for seed in 0..100u64 {
         let settings = tiny_normal_settings(seed);
-        let galaxy = generate_galaxy(&settings)
+        let galaxy = generate_galaxy(&settings, &star_names)
             .unwrap_or_else(|e| panic!("FR-1 seed {seed} failed to generate: {e}"));
         let n = galaxy.stars.len();
         assert!(
@@ -64,9 +70,10 @@ fn fr1_tiny_normal_envelope_holds_across_100_seeds() {
 /// fingerprint (`engine/tests/determinism.rs`).
 #[test]
 fn fr1_determinism_same_seed_same_galaxy() {
+    let star_names = names();
     let settings = tiny_normal_settings(0xFEED_FACE);
-    let g1 = generate_galaxy(&settings).expect("first generation");
-    let g2 = generate_galaxy(&settings).expect("second generation");
+    let g1 = generate_galaxy(&settings, &star_names).expect("first generation");
+    let g2 = generate_galaxy(&settings, &star_names).expect("second generation");
     assert_eq!(g1.stars.len(), g2.stars.len(), "star count drift");
     for (i, (a, b)) in g1.stars.iter().zip(g2.stars.iter()).enumerate() {
         assert_eq!(a.id, b.id, "star {i} id drift");
@@ -91,6 +98,7 @@ fn fr1_determinism_same_seed_same_galaxy() {
 /// the observed range is narrow (max - min ≤ 10).
 #[test]
 fn fr1_tiny_normal_observed_range_is_narrow() {
+    let star_names = names();
     let mut min = u32::MAX;
     let mut max = 0u32;
     for seed in 0..200u64 {
@@ -98,7 +106,7 @@ fn fr1_tiny_normal_observed_range_is_narrow() {
             clippy::cast_possible_truncation,
             reason = "galaxy.stars.len() bounded by FR-1 envelope (≤100)"
         )]
-        let n = generate_galaxy(&tiny_normal_settings(seed))
+        let n = generate_galaxy(&tiny_normal_settings(seed), &star_names)
             .unwrap()
             .stars
             .len() as u32;
@@ -123,6 +131,7 @@ fn fr1_tiny_normal_observed_range_is_narrow() {
 /// rejection sampler past its budget for one density.
 #[test]
 fn fr1_tiny_all_density_tiers_succeed() {
+    let star_names = names();
     for density in [
         GalaxyDensity::Sparse,
         GalaxyDensity::Normal,
@@ -131,7 +140,7 @@ fn fr1_tiny_all_density_tiers_succeed() {
     ] {
         let mut settings = tiny_normal_settings(0xDEAD_BEEF);
         settings.density = density;
-        let galaxy = generate_galaxy(&settings)
+        let galaxy = generate_galaxy(&settings, &star_names)
             .unwrap_or_else(|e| panic!("FR-1 density {density:?} failed: {e}"));
         assert!(!galaxy.stars.is_empty(), "FR-1 density {density:?} empty");
     }

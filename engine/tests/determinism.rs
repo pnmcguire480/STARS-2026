@@ -336,8 +336,10 @@ fn compute_determinism_fingerprint() -> Vec<u8> {
             ai_difficulty: stars2026_engine::types::AiDifficulty::Standard,
             random_seed: 0xA1B2_C3D4_E5F6_0789,
         };
-        let galaxy =
-            stars2026_engine::galaxy::generate_galaxy(&settings).expect("fingerprint galaxy");
+        let star_names =
+            stars2026_engine::data::load_star_names().expect("bundled star_names.json must parse");
+        let galaxy = stars2026_engine::galaxy::generate_galaxy(&settings, &star_names)
+            .expect("fingerprint galaxy");
         bytes.extend_from_slice(&(galaxy.stars.len() as u32).to_le_bytes());
         for s in &galaxy.stars {
             bytes.extend_from_slice(&s.id.0.to_le_bytes());
