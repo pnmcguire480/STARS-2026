@@ -108,15 +108,114 @@ Each entry follows this shape:
 
 ## Entries pending (no stub yet)
 
-These formulas will land here as their owning atoms ship:
+### F-4 — Habitability formula (FR-4)
 
-- **F-4** — `GalaxySize::map_dimension` (map size in light-years per
+- **Applies to:** `engine/src/planet.rs::habitability` (Atom C)
+- **Source:** **CANON** — reverse-engineered from Stars! 1995, verified
+  against `craig-stars/cs/race.go::GetPlanetHabitability` and the
+  autohost wiki "Guts of the Habitability Formula" article.
+- **Algorithm:**
+
+  **Per-axis (gravity, temperature, radiation):**
+
+  If the race is **immune** to this axis: contribute a fixed **10000**
+  points to `planetValuePoints` and leave `ideality` unchanged.
+
+  If the planet value falls **within** the race's `[habLow, habHigh]`:
+  ```
+  habCenter = (habLow + habHigh) / 2
+  habRadius = (habCenter > habValue) ? (habCenter - habLow) : (habHigh - habCenter)
+  tmp       = abs(habValue - habCenter)
+  fromIdeal = 100 - (tmp * 100 / habRadius)
+  planetValuePoints += fromIdeal * fromIdeal    // max 10000 per axis
+  poorPlanetMod = (tmp * 2) - habRadius
+  if poorPlanetMod > 0:
+      ideality = ideality * (habRadius * 2 - poorPlanetMod) / (habRadius * 2)
+  ```
+
+  If the planet value falls **outside** `[habLow, habHigh]` (hostile):
+  ```
+  habRed = distance from nearest edge of [habLow, habHigh]
+  habRed = min(habRed, 15)     // capped at 15 per axis
+  redValue += habRed
+  ```
+
+  **Combining axes:**
+  ```
+  if redValue != 0:
+      return -redValue           // range: -1 to -45 (3 axes × 15)
+  result = floor(sqrt(planetValuePoints / 3.0) + 0.9)
+  result = result * ideality / 10000
+  return result                  // range: 0 to 100
+  ```
+
+  `ideality` starts at 10000 (100%) and is reduced per green axis when
+  the planet is in the outer half of the tolerance range (the
+  `poorPlanetMod` penalty). Immune axes always contribute max points
+  and never reduce ideality.
+
+- **Output range:** -45 (maximally hostile, all 3 axes at max red) to
+  +100 (perfect homeworld, all 3 axes centered).
+- **Cross-check by:** Atom C test suite pins against known
+  craig-stars reference values.
+
+### F-5 — Population growth formula (FR-5)
+
+- **Applies to:** `engine/src/planet.rs::population_growth` (Atom C)
+- **Source:** **CANON** — reverse-engineered from Stars! 1995, verified
+  against `craig-stars/cs/planet.go::GetGrowthAmount` and the autohost
+  wiki "Guts of population growth" article (Jason Cawley / Bill Butler).
+- **Algorithm:**
+
+  **Max population (planet capacity):**
+  ```
+  maxPop = floor_to_100(1_000_000 * max(habValue, 5) / 100)
+  ```
+  A 100% hab world holds 1M; hab floored at 5% for capacity calc.
+
+  **Normal growth (hab > 0, pop ≤ maxPop):**
+  ```
+  popGrowth = pop * growthRate * habValue / 10000
+  ```
+  `growthRate` is the race's chosen rate (integer, e.g. 15 for 15%).
+
+  **Crowding penalty (pop > 25% of maxPop):**
+  ```
+  capacityRatio = pop / maxPop
+  if capacityRatio > 0.25:
+      crowdingFactor = (16/9) * (1 - capacityRatio)^2
+      popGrowth = popGrowth * crowdingFactor
+  ```
+  At 25% capacity: factor = 1.0 (no penalty). At 100%: factor = 0.
+
+  **Hostile worlds (hab < 0):**
+  ```
+  deathAmount = pop * habValue / 1000    // habValue is negative
+  ```
+  E.g. -10 hab kills ~1% per turn; -45 hab kills ~4.5% per turn.
+
+  **Overcrowding (pop > maxPop):**
+  ```
+  dieoffPercent = clamp((capacityRatio - 1) * 0.04, 0, 0.12)
+  deathAmount = pop * -dieoffPercent
+  ```
+  At 200% capacity: 4% die/turn. Caps at 12% die/turn.
+
+  **Rounding:** STARS 2026 uses **truncation (floor)** per Patrick
+  decision 2026-04-09. This is a deliberate deviation from
+  craig-stars which uses round-half-up. `maxPop` is floored to the
+  nearest 100 (matching the `Colonists(u32)` granularity).
+
+- **Cross-check by:** Atom C test suite pins against known
+  craig-stars reference values (adjusted for truncation rounding).
+
+## Entries pending (no stub yet)
+
+- **F-6** — `GalaxySize::map_dimension` (map size in light-years per
   galaxy size) — Phase 1 Task 1 council value, pending canon cross-check.
-- **F-5** — `HabAxis` canonical windows — FR-4 (habitability formula)
-  owns this, pending `planet.rs`.
-- **F-6** — Planet mineral concentration depletion — FR-7, pending.
-- **F-7** — Population growth with crowding — FR-5, pending.
-- **F-8** — Tactical combat resolution order — FR-14, pending.
+- **F-7** — Planet mineral concentration depletion — FR-7, pending Atom D.
+- **F-8** — Resource generation formula — FR-6, pending Atom D.
+- **F-9** — Tactical combat resolution order — FR-14, pending.
 
 ---
 

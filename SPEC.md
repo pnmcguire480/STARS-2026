@@ -99,7 +99,7 @@ STARS 2026 is an all-original implementation written from scratch in modern lang
 | FR-3 | Allow race creation with 1 PRT (the rest deferred to v1.0) and a basic LRT picker. |
 | FR-4 | Calculate planet habitability per race using the canonical *Stars!* hab formula (sourced from starsfaq.com). |
 | FR-5 | Population growth per turn with crowding penalty above 25% capacity. |
-| FR-6 | Resource generation from population × efficiency × hab factor. |
+| FR-6 | Resource generation from population + factory output (hab affects resources *indirectly* via growth/capacity, not as a direct multiplier — per canon). |
 | FR-7 | Mineral extraction with mine count, mining rate, and concentration depletion. |
 | FR-8 | Production queue (auto-build + manual orders) processed each turn. |
 | FR-9 | Six-field tech tree with research allocation slider; tech levels gate component availability. |
