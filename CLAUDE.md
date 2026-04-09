@@ -33,8 +33,8 @@
 
 ### Last Session
 
-- **Date:** 2026-04-09 (Atom A closed, Atom B starting)
-- **Phase:** 1 — Atom 2 **COMPLETE**; Atom A hardening interlude **COMPLETE** (13 sub-atoms, ADR-0003). Atom B (wasm-bindgen-test cross-target fingerprint) **STARTING**.
+- **Date:** 2026-04-09 (Atom B closed, Atom C starting)
+- **Phase:** 1 — Atom 2 **COMPLETE**; Atom A **COMPLETE** (13 sub-atoms, ADR-0003); Atom B **COMPLETE** (3 sub-atoms, cross-target determinism proven). Atom C (`planet.rs`) **STARTING** — full 5-agent council needed.
 - **Atom 2 outcome:** 10 sub-atoms shipped autonomously (2.1–2.8 + P0 fixes 2.9+2.10), **67 tests passing** (61 unit + 2 determinism + 4 FR-1 acceptance), 4/4 sniff gates green on every push, CI green on `2237138`. Atom 2.9 changed the `actual_star_count` jitter from symmetric `[-10%, +10%]` to asymmetric `[0, +20%]` to hit the then-SPEC FR-1 floor of 32 (now invalidated — see Atom A below). Atom 2.10 widened the determinism fingerprint from endpoint sampling to full-vec walk (`499 → 1485` hex bytes). Crucible verdict logged six P1s and four P2s in `docs/codeglass/CRUCIBLE-VERDICT-atom-2.md`.
 - **Deep audit (2026-04-08 morning):** parallel Explore agents verified reality against the BACKLOG/CONTEXT claims. Sniff green live. No Atom 3 plan document exists (BACKLOG.md was speaking in future tense about planned Atom 3.0 sub-atoms). 4 of the 6 P1s still open in code. Cairntir `stars-2026` MCP wing is broken (embedding dimension mismatch 64 vs 384 — needs `cairntir init --user --force`).
 - **Patrick decisions locked 2026-04-08:**

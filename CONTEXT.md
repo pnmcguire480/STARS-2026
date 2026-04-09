@@ -51,10 +51,10 @@ The single most important property the brief asked for — **every commit on mai
 ---
 
 ## Now
-- **Date:** 2026-04-09 (Atom A closed, Atom B starting)
-- **Phase:** 1 — Atom 2 **COMPLETE**, Atom A **COMPLETE** (13 sub-atoms, 7 of 9 Crucible P1s closed, 72 tests, ADR-0003 documents the pass). Atom B (wasm-bindgen-test cross-target fingerprint) **STARTING**.
-- **Active task:** Atom B — the single highest-risk deferred item: prove that the 1204-byte determinism fingerprint is byte-identical between wasm32 and native targets. The entire determinism contract (FR-16 save/load, FR-31 multiplayer replay) is theater until this lands. Mini-council needed: Rust + Performance Engineer + Plan.
-- **Blocker:** Cairntir `stars-2026` MCP wing is broken (embedding dimension mismatch 64 vs 384) — needs `cairntir init --user --force` out-of-band. Critical decisions backed up to auto-memory as a fallback.
+- **Date:** 2026-04-09 (Atom B closed, Atom C starting)
+- **Phase:** 1 — Atom 2 **COMPLETE**, Atom A **COMPLETE** (13 sub-atoms, all 9 Crucible P1s closed), Atom B **COMPLETE** (3 sub-atoms, cross-target determinism proven — 1204 bytes byte-identical wasm32 vs native, 5 sniff gates). 73 tests total. Atom C (`planet.rs`) **STARTING**.
+- **Active task:** Atom C — `engine/src/planet.rs`. Full 5-agent council (Rust + Plan + Performance Engineer + Game Design + First Principles). Covers FR-2 (starting worlds), FR-4 (habitability), FR-5 (population growth), FR-6 (resource generation), FR-7 (mineral extraction).
+- **Blocker:** None. Cairntir MCP wing seeded (4 drawers). All prior debt cleared.
 
 ## Just Finished
 - Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.

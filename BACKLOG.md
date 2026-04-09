@@ -4,7 +4,7 @@
 > between sessions is unreliable; if it isn't written down here, it's lost.
 > **Every session MUST read this file after CLAUDE.md and before starting work.**
 
-Last updated: 2026-04-09 (Atom A close-out, A.12)
+Last updated: 2026-04-09 (Atom B closed, Atom C next)
 
 ---
 
@@ -15,9 +15,9 @@ Last updated: 2026-04-09 (Atom A close-out, A.12)
 
 ---
 
-## Immediate next — Atom B (wasm-bindgen-test cross-target fingerprint)
+## Immediate next — Atom C (planet.rs with 5-agent council)
 
-**The single highest-risk deferred item in the codebase.** The 1204-byte determinism fingerprint in `engine/tests/determinism.rs` is same-target stable only — wasm32 and native have never been proven to produce the same bytes. The entire determinism contract (FR-16 save/load, FR-31 multiplayer replay) is theater until Atom B closes. Flagged P0-level by Red Teamer, Inversion, and Assumption Auditor in the Atom 2 closing Crucible. Mini-council needed: Rust + Performance Engineer + Plan.
+Atom C = `engine/src/planet.rs`. Full 5-agent council needed: Rust + Plan + Performance Engineer + Game Design + First Principles. Scope covers SPEC.md FR-2 (starting worlds + balanced hab), FR-4 (habitability formula), FR-5 (population growth), FR-6 (resource generation), FR-7 (mineral extraction). Council will likely split into 8–12 sub-atoms. The `data/*.json` loader pattern (established in A.6) and the `GameError` struct variant pattern (A.9) are both ready for planet.rs to consume.
 
 ## Deferred atoms
 
@@ -37,6 +37,12 @@ The Phase 1 Task 1 close landed 16 atoms of type vocabulary. Patrick authorized 
 The Devil's Advocate recommended a pre-commit hook rejecting `git add -A` in autonomous mode after the Atom 2.3 stray-file sweep. Not urgent (targeted `git add` is now the convention), but worth implementing before the next autonomous-mode session.
 
 ---
+
+## Closed in Atom B (2026-04-09)
+
+| P1 # | Finding | Closed by | Commit |
+|---|---|---|---|
+| P1-2 | Cross-target wasm/native fingerprint byte equality | B.2 | `79ee6db` |
 
 ## Closed in Atom A (2026-04-08 — 2026-04-09)
 
