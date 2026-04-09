@@ -16,6 +16,7 @@
 pub mod data;
 pub mod determinism;
 pub mod galaxy;
+pub mod planet;
 pub mod rng;
 pub mod types;
 
