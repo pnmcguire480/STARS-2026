@@ -106,8 +106,6 @@ Each entry follows this shape:
 
 ---
 
-## Entries pending (no stub yet)
-
 ### F-4 — Habitability formula (FR-4)
 
 - **Applies to:** `engine/src/planet.rs::habitability` (Atom C)
@@ -209,12 +207,77 @@ Each entry follows this shape:
 - **Cross-check by:** Atom C test suite pins against known
   craig-stars reference values (adjusted for truncation rounding).
 
+### F-6 — Resource generation formula (FR-6)
+
+- **Applies to:** `engine/src/planet.rs::resource_output` (Atom D)
+- **Source:** **CANON** — sourced from `craig-stars/cs/planet.go`
+  (`ComputeResourcesPerYear`) and `craig-stars/cs/race.go` (`NewRace`).
+- **Algorithm:**
+
+  ```
+  colonist_resources = population / (pop_efficiency * 100)
+  max_operable       = num_factories_per_10k * population / 10000
+  operable           = min(built_factories, max_operable)
+  factory_resources  = ceil(operable * factory_output / 10)
+  total_resources    = colonist_resources + factory_resources
+  ```
+
+  **Default race constants:**
+  - `pop_efficiency` = 10 (1 resource per 1,000 colonists)
+  - `factory_output` = 10 (each factory produces 10/10 = 1 resource/yr)
+  - `num_factories_per_10k` = 10 (operable per 10,000 colonists)
+
+  Race design allows customizing `factory_output` (1–15),
+  `num_factories_per_10k` (5–25), and `factory_cost` (5–25). AR races
+  skip factories entirely (not in v0.1 scope).
+
+  **Note:** hab% does NOT directly multiply resource output (SPEC FR-6
+  amended 2026-04-09 to match canon). Hab affects resources indirectly
+  via population growth rate and planet capacity.
+
+- **Rounding:** `colonist_resources` truncates (integer division).
+  `factory_resources` uses ceiling (`ceil`).
+- **Cross-check by:** Atom D test suite.
+
+### F-7 — Mineral extraction formula (FR-7)
+
+- **Applies to:** `engine/src/planet.rs::mineral_extraction` (Atom D)
+- **Source:** **CANON** — sourced from `craig-stars/cs/planet.go`
+  (`getMineralOutput`) and `craig-stars/cs/rules.go`.
+- **Algorithm:**
+
+  **Extraction per mineral type per turn:**
+  ```
+  max_operable = num_mines_per_10k * population / 10000
+  operable     = min(built_mines, max_operable)
+  output       = concentration * operable * mine_output / 1000
+  ```
+
+  **Default race constants:**
+  - `mine_output` = 10 (at concentration 100: each mine yields 1 kT/yr)
+  - `num_mines_per_10k` = 10 (operable per 10,000 colonists)
+
+  **Concentration depletion** (cumulative mine-years model):
+  ```
+  mine_years_to_rollover = mineral_decay_factor / (concentration^2)
+  mineral_decay_factor   = 1,500,000
+  ```
+  When accumulated `mine_years > mine_years_to_rollover`, concentration
+  drops by `floor(mine_years / mine_years_to_rollover)`. Minimum
+  concentration = **1** (never reaches 0). Homeworld minimum = **30**.
+
+  **Note:** mine-years accumulation is turn-engine state. Atom D
+  implements the per-turn extraction formula and the depletion threshold
+  calculation as pure functions; the actual mine-years tracking lands
+  when the turn engine (FR-15) ships.
+
+- **Rounding:** extraction output truncates (integer division).
+- **Cross-check by:** Atom D test suite.
+
 ## Entries pending (no stub yet)
 
-- **F-6** — `GalaxySize::map_dimension` (map size in light-years per
+- **F-8** — `GalaxySize::map_dimension` (map size in light-years per
   galaxy size) — Phase 1 Task 1 council value, pending canon cross-check.
-- **F-7** — Planet mineral concentration depletion — FR-7, pending Atom D.
-- **F-8** — Resource generation formula — FR-6, pending Atom D.
 - **F-9** — Tactical combat resolution order — FR-14, pending.
 
 ---

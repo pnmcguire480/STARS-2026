@@ -275,6 +275,105 @@ pub fn population_growth(pop: crate::types::Colonists, hab_pct: i32, growth_rate
     growth
 }
 
+/// Resources generated per turn on a planet (FR-6).
+///
+/// Returns the total resource output as an integer. Resources come
+/// from two sources: colonist labor and factory output.
+///
+/// ```text
+/// colonist_resources = population / (pop_efficiency * 100)
+/// max_operable       = num_factories_per_10k * population / 10000
+/// operable           = min(built_factories, max_operable)
+/// factory_resources  = ceil(operable * factory_output / 10)
+/// total              = colonist_resources + factory_resources
+/// ```
+///
+/// See `docs/FORMULAS.md` F-6 for the full derivation.
+///
+/// # Arguments
+///
+/// - `pop` — current planet population.
+/// - `factories` — number of factories built on the planet.
+/// - `pop_efficiency` — colonists per resource (default 10 = 1 resource
+///   per 1,000 people). Race-configurable.
+/// - `factory_output` — output per factory in tenths (default 10 = 1
+///   resource per factory). Race-configurable (1–15).
+/// - `num_factories_per_10k` — max operable factories per 10,000
+///   colonists (default 10). Race-configurable (5–25).
+#[must_use]
+pub fn resource_output(
+    pop: crate::types::Colonists,
+    factories: u32,
+    pop_efficiency: u32,
+    factory_output: u32,
+    num_factories_per_10k: u32,
+) -> u32 {
+    let pop_units = pop.units();
+
+    // Colonist resources: pop_units is in hundreds, so population =
+    // pop_units * 100. Resources = population / (pop_efficiency * 100)
+    // = pop_units * 100 / (pop_efficiency * 100) = pop_units / pop_efficiency.
+    let colonist_resources = if pop_efficiency == 0 {
+        0
+    } else {
+        pop_units / pop_efficiency
+    };
+
+    // Max operable factories: num_factories_per_10k per 10,000 colonists.
+    // population = pop_units * 100, so max_operable =
+    // num_factories_per_10k * pop_units * 100 / 10000
+    // = num_factories_per_10k * pop_units / 100.
+    let max_operable = num_factories_per_10k * pop_units / 100;
+    let operable = factories.min(max_operable);
+
+    // Factory resources: ceil(operable * factory_output / 10).
+    let factory_resources = (operable * factory_output).div_ceil(10);
+
+    colonist_resources + factory_resources
+}
+
+/// Minerals extracted per turn for a single mineral type (FR-7).
+///
+/// Returns the kT of minerals extracted. Does NOT modify concentration
+/// (depletion is a separate concern tracked via mine-years in the turn
+/// engine).
+///
+/// ```text
+/// max_operable = num_mines_per_10k * population / 10000
+/// operable     = min(built_mines, max_operable)
+/// output       = concentration * operable * mine_output / 1000
+/// ```
+///
+/// See `docs/FORMULAS.md` F-7 for the full derivation.
+///
+/// # Arguments
+///
+/// - `pop` — current planet population.
+/// - `mines` — number of mines built on the planet.
+/// - `concentration` — current mineral concentration (1–100).
+/// - `mine_output` — output per mine per year in thousandths (default
+///   10, so at concentration 100: 100 × 1 × 10/1000 = 1 kT/mine/yr).
+///   Race-configurable.
+/// - `num_mines_per_10k` — max operable mines per 10,000 colonists
+///   (default 10). Race-configurable.
+#[must_use]
+pub fn mineral_extraction(
+    pop: crate::types::Colonists,
+    mines: u32,
+    concentration: u32,
+    mine_output: u32,
+    num_mines_per_10k: u32,
+) -> u32 {
+    let pop_units = pop.units();
+
+    // Max operable mines: same formula as factories.
+    let max_operable = num_mines_per_10k * pop_units / 100;
+    let operable = mines.min(max_operable);
+
+    // Output: concentration * operable * mine_output / 1000.
+    concentration * operable * mine_output / 1000
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,6 +717,118 @@ mod tests {
     fn growth_is_deterministic() {
         let a = population_growth(Colonists::new(3000), 75, 15);
         let b = population_growth(Colonists::new(3000), 75, 15);
+        assert_eq!(a, b);
+    }
+
+    // ─── D.1 tests: resource_output ────────────────────────────────
+
+    #[test]
+    fn resource_output_empty_planet() {
+        assert_eq!(resource_output(Colonists::new(0), 100, 10, 10, 10), 0);
+    }
+
+    #[test]
+    fn resource_output_colonists_only_no_factories() {
+        // 100,000 people (units=1000), no factories.
+        // colonist_resources = 1000 / 10 = 100.
+        assert_eq!(resource_output(Colonists::new(1000), 0, 10, 10, 10), 100);
+    }
+
+    #[test]
+    fn resource_output_default_race_constants() {
+        // 100,000 people (units=1000), 50 factories.
+        // colonist = 1000 / 10 = 100.
+        // max_operable = 10 * 1000 / 100 = 100. operable = min(50, 100) = 50.
+        // factory = ceil(50 * 10 / 10) = 50.
+        // total = 100 + 50 = 150.
+        assert_eq!(resource_output(Colonists::new(1000), 50, 10, 10, 10), 150);
+    }
+
+    #[test]
+    fn resource_output_factory_limit_applies() {
+        // 10,000 people (units=100), 200 factories.
+        // colonist = 100 / 10 = 10.
+        // max_operable = 10 * 100 / 100 = 10. operable = min(200, 10) = 10.
+        // factory = ceil(10 * 10 / 10) = 10.
+        // total = 10 + 10 = 20.
+        assert_eq!(resource_output(Colonists::new(100), 200, 10, 10, 10), 20);
+    }
+
+    #[test]
+    fn resource_output_high_factory_output() {
+        // 100,000 people (units=1000), 50 factories, factory_output=15.
+        // colonist = 1000 / 10 = 100.
+        // max_operable = 10 * 1000 / 100 = 100. operable = 50.
+        // factory = ceil(50 * 15 / 10) = ceil(75) = 75.
+        // total = 175.
+        assert_eq!(resource_output(Colonists::new(1000), 50, 10, 15, 10), 175);
+    }
+
+    #[test]
+    fn resource_output_factory_ceil_rounding() {
+        // 10,000 people (units=100), 3 factories, factory_output=10.
+        // factory = ceil(3 * 10 / 10) = ceil(3.0) = 3.
+        // 7 factories: ceil(7 * 10 / 10) = 7.
+        assert_eq!(resource_output(Colonists::new(100), 3, 10, 10, 10), 13);
+        // Now with factory_output=7: ceil(3 * 7 / 10) = ceil(2.1) = 3.
+        assert_eq!(resource_output(Colonists::new(100), 3, 10, 7, 10), 13);
+    }
+
+    // ─── D.2 tests: mineral_extraction ─────────────────────────────
+
+    #[test]
+    fn mineral_extraction_empty_planet() {
+        assert_eq!(mineral_extraction(Colonists::new(0), 10, 50, 10, 10), 0);
+    }
+
+    #[test]
+    fn mineral_extraction_no_mines() {
+        assert_eq!(mineral_extraction(Colonists::new(1000), 0, 50, 10, 10), 0);
+    }
+
+    #[test]
+    fn mineral_extraction_default_race_at_full_concentration() {
+        // 100,000 people (units=1000), 100 mines, concentration=100.
+        // max_operable = 10 * 1000 / 100 = 100. operable = 100.
+        // output = 100 * 100 * 10 / 1000 = 100.
+        assert_eq!(
+            mineral_extraction(Colonists::new(1000), 100, 100, 10, 10),
+            100
+        );
+    }
+
+    #[test]
+    fn mineral_extraction_half_concentration() {
+        // Same as above but concentration=50.
+        // output = 50 * 100 * 10 / 1000 = 50.
+        assert_eq!(
+            mineral_extraction(Colonists::new(1000), 100, 50, 10, 10),
+            50
+        );
+    }
+
+    #[test]
+    fn mineral_extraction_mine_limit_applies() {
+        // 10,000 people (units=100), 200 mines, concentration=100.
+        // max_operable = 10 * 100 / 100 = 10. operable = 10.
+        // output = 100 * 10 * 10 / 1000 = 10.
+        assert_eq!(
+            mineral_extraction(Colonists::new(100), 200, 100, 10, 10),
+            10
+        );
+    }
+
+    #[test]
+    fn mineral_extraction_low_concentration() {
+        // concentration=1 (minimum floor). 100 operable mines.
+        // output = 1 * 100 * 10 / 1000 = 1.
+        assert_eq!(mineral_extraction(Colonists::new(1000), 100, 1, 10, 10), 1);
+    }
+
+    #[test]
+    fn mineral_extraction_deterministic() {
+        let a = mineral_extraction(Colonists::new(500), 50, 75, 10, 10);
+        let b = mineral_extraction(Colonists::new(500), 50, 75, 10, 10);
         assert_eq!(a, b);
     }
 }
