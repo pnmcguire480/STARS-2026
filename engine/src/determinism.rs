@@ -124,7 +124,8 @@ pub mod test_support {
         0x00, 0x20, 0x62, 0x40, 0x64, 0x00, 0x00, 0x00, 0x0D, 0x00, 0x00, 0x00, 0xF1, 0xFF, 0xFF,
         0xFF, 0x10, 0x27, 0x00, 0x00, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF6,
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x96, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00,
+        0x4B, 0x00, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
     ];
 
     /// Compute the determinism fingerprint by exercising every public
@@ -365,6 +366,30 @@ pub mod test_support {
             bytes.extend_from_slice(&growth_crowded.to_le_bytes());
             let growth_hostile = population_growth(Colonists::new(1000), -10, 15);
             bytes.extend_from_slice(&growth_hostile.to_le_bytes());
+        }
+
+        // ─── 17. resource_output + mineral_extraction (Atom D) ──────
+        {
+            use crate::planet::{mineral_extraction, resource_output};
+
+            // Default race constants.
+            let pop = Colonists::new(1000); // 100,000 people
+
+            // Resources: 50 factories, default race.
+            let res = resource_output(pop, 50, 10, 10, 10);
+            bytes.extend_from_slice(&res.to_le_bytes());
+
+            // Resources: factory-limited (few colonists, many factories).
+            let res_limited = resource_output(Colonists::new(100), 200, 10, 10, 10);
+            bytes.extend_from_slice(&res_limited.to_le_bytes());
+
+            // Mineral extraction: 100 mines, concentration 75.
+            let minerals = mineral_extraction(pop, 100, 75, 10, 10);
+            bytes.extend_from_slice(&minerals.to_le_bytes());
+
+            // Mineral extraction: mine-limited.
+            let minerals_limited = mineral_extraction(Colonists::new(100), 200, 100, 10, 10);
+            bytes.extend_from_slice(&minerals_limited.to_le_bytes());
         }
 
         bytes
