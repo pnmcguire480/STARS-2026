@@ -13,8 +13,16 @@ repository = "local"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "1.3"
-rand = { version = "0.8", default-features = false, features = ["std_rng"] }
-rand_chacha = "0.3"
+# P1-3 (Crucible Red Teamer): exact version pins. `gen_range` internals
+# and ChaCha20 stream bytes are NOT a stability contract across minor
+# versions of these crates; a silent `cargo update` could reroll every
+# saved galaxy. The determinism fingerprint is the canary, but the
+# pins are the guardrail that keeps the canary from ever getting the
+# chance to sing. Bumping either crate is a governance decision that
+# requires re-pinning the determinism fingerprint AND running the
+# closing Crucible on the change.
+rand = { version = "=0.8.5", default-features = false, features = ["std_rng"] }
+rand_chacha = "=0.3.1"
 thiserror = "1.0"
 
 [profile.release]

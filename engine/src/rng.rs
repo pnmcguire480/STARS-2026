@@ -197,6 +197,68 @@ mod tests {
         assert_eq!(fnv1a_64(b"a"), 0xaf63_dc4c_8601_ec8c);
     }
 
+    /// **A.10 — P1-7 resolution.** The Crucible Assumption Auditor
+    /// flagged that `fnv1a_64` was only tested with the two classical
+    /// reference vectors (`""` and `"a"`). A typo in the `const fn`
+    /// that preserved both reference vectors while silently diverging
+    /// on the actual subsystem strings the engine uses (`"galaxy"`,
+    /// `"planet"`, `"combat"`, …) would be invisible to the existing
+    /// tests and poison every RNG stream without the determinism
+    /// fingerprint catching it until very late.
+    ///
+    /// These expected values were computed **out-of-band** from a
+    /// second FNV-1a implementation (Python, 2026-04-08) and pinned
+    /// here. They lock the hash to specific outputs for every
+    /// subsystem string the engine actually uses, so any drift in the
+    /// `const fn` — no matter how subtle — fails the test for the
+    /// exact string that would have silently corrupted its stream.
+    #[test]
+    fn fnv1a_subsystem_vectors() {
+        assert_eq!(fnv1a_64(b"galaxy"), 0x2e92_fe67_37b3_4391);
+        assert_eq!(fnv1a_64(b"planet"), 0xe7f2_3bb0_06fd_b313);
+        assert_eq!(fnv1a_64(b"rng"), 0x8a0e_a119_6113_ad12);
+        assert_eq!(fnv1a_64(b"combat"), 0xca0b_f97c_ce71_7b21);
+        assert_eq!(fnv1a_64(b"star"), 0xaefd_5819_1d95_e091);
+        assert_eq!(fnv1a_64(b"race"), 0x6de0_021f_d211_f338);
+        assert_eq!(fnv1a_64(b"tech"), 0xfa1c_daef_19a9_a631);
+        assert_eq!(fnv1a_64(b"fleet"), 0xf775_f8a9_7470_ae4f);
+        assert_eq!(fnv1a_64(b"scanner"), 0x11d9_23ce_d56f_b0c5);
+        assert_eq!(fnv1a_64(b"turn"), 0x869a_8aef_69c6_7efa);
+        assert_eq!(fnv1a_64(b"ai"), 0x089c_3b07_b545_891f);
+    }
+
+    /// Tripwire: if the above vectors drift, this test shows the
+    /// *exact* subsystem string that would diverge, instead of a
+    /// cryptic "assertion failed" at a single line.
+    #[test]
+    fn fnv1a_subsystem_vectors_distinct() {
+        // All pinned subsystem hashes must be pairwise distinct — the
+        // seeded_rng domain-separation contract breaks if two
+        // subsystems collide, and this test catches a hypothetical
+        // future mistake of pasting the same hash twice.
+        let vectors = [
+            fnv1a_64(b"galaxy"),
+            fnv1a_64(b"planet"),
+            fnv1a_64(b"rng"),
+            fnv1a_64(b"combat"),
+            fnv1a_64(b"star"),
+            fnv1a_64(b"race"),
+            fnv1a_64(b"tech"),
+            fnv1a_64(b"fleet"),
+            fnv1a_64(b"scanner"),
+            fnv1a_64(b"turn"),
+            fnv1a_64(b"ai"),
+        ];
+        for i in 0..vectors.len() {
+            for j in (i + 1)..vectors.len() {
+                assert_ne!(
+                    vectors[i], vectors[j],
+                    "subsystem hash collision at indices {i},{j}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn seed_buffer_upper_half_never_zero() {
         // Regression: the final 8 bytes of the seed buffer XOR game_seed

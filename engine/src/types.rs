@@ -58,8 +58,23 @@ pub enum GameError {
     /// `SvelteKit` layer can surface an actionable message instead of a
     /// stack trace. Same seed → same failure, per the determinism
     /// contract.
-    #[error("galaxy generation failed: {0}")]
-    GalaxyGenerationFailed(&'static str),
+    ///
+    /// **Struct variant (A.9, P1-5 resolution):** upgraded from a
+    /// single-tuple `(&'static str)` payload to a named-field struct
+    /// variant during Atom A. This was flagged by the Crucible
+    /// Inversion Agent as a breaking-change debt: v0.2 i18n (server →
+    /// JS client) needs a typed payload, and paying the cost while
+    /// there is exactly one call site is cheaper than doing it later.
+    /// The `reason` field is tagged `// i18n:v0.2` in spirit — when
+    /// v0.2 lands, add an `error_code: u16` or enum field and keep
+    /// `reason` as the human-readable fallback.
+    #[error("galaxy generation failed: {reason}")]
+    GalaxyGenerationFailed {
+        /// Short, human-readable stage/reason string. `'static` for now
+        /// because every caller passes a string literal; will move to
+        /// `String` or an error-code enum when v0.2 i18n lands.
+        reason: &'static str,
+    },
 }
 
 // =============================================================================

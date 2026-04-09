@@ -282,9 +282,9 @@ fn place_one_star(
             return Ok(candidate);
         }
     }
-    Err(crate::types::GameError::GalaxyGenerationFailed(
-        "place_one_star: retry budget exhausted (density too high or map too small)",
-    ))
+    Err(crate::types::GameError::GalaxyGenerationFailed {
+        reason: "place_one_star: retry budget exhausted (density too high or map too small)",
+    })
 }
 
 /// Squared distance between two integer-valued positions, computed in
@@ -405,16 +405,13 @@ pub struct Galaxy {
 /// **NOT the same as `GalaxySize::min_homeworld_distance`.** The
 /// homeworld distance applies to the homeworld-selection pass that
 /// `planet.rs` (Atom 3) will own; per-star spacing is much smaller.
-/// Per the Game Design council, Stars! 1995 canon uses spacings in
-/// the range of 3–8 light-years for individual stars. STARS 2026
-/// scales those values up modestly to suit our larger map dimensions
-/// while preserving the relative ordering across density tiers.
 ///
-/// **Open question for Patrick (deferred to manual review):** are
-/// these the right values? They are *engine-tunable* knobs that the
-/// Atom 2.8 acceptance test will exercise across the full FR-1
-/// envelope; if the rejection sampler exhausts its budget, the
-/// constants here are the first thing to lower.
+/// **See `docs/FORMULAS.md` entry F-1 for the derivation.** This is
+/// a STARS 2026 COUNCIL value (Atom 2, Game Design + Performance
+/// Engineer), not a canon lift — the *Stars!* 1995 reference uses
+/// 3–8 light-years on its smaller grid and F-1 documents the scaling
+/// rationale. If the rejection sampler exhausts its budget, the
+/// constants here are the first thing to lower (P1-4, P1-8).
 const fn min_star_distance(density: crate::types::GalaxyDensity) -> f64 {
     match density {
         crate::types::GalaxyDensity::Sparse => 30.0,
@@ -685,7 +682,7 @@ mod tests {
         let result = place_one_star(&mut rng, &existing, 50, 200 * 200);
         assert!(matches!(
             result,
-            Err(crate::types::GameError::GalaxyGenerationFailed(_))
+            Err(crate::types::GameError::GalaxyGenerationFailed { .. })
         ));
     }
 

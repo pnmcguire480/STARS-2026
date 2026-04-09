@@ -53,12 +53,14 @@ struct StarNamesFile {
 /// `Result` exists so the failure mode is visible at the call site
 /// rather than papered over with `.unwrap()`.
 pub fn load_star_names() -> Result<Vec<String>, GameError> {
-    let parsed: StarNamesFile = serde_json::from_str(STAR_NAMES_JSON)
-        .map_err(|_| GameError::GalaxyGenerationFailed("star_names.json parse error"))?;
+    let parsed: StarNamesFile =
+        serde_json::from_str(STAR_NAMES_JSON).map_err(|_| GameError::GalaxyGenerationFailed {
+            reason: "star_names.json parse error",
+        })?;
     if parsed.names.is_empty() {
-        return Err(GameError::GalaxyGenerationFailed(
-            "star_names.json contains empty names list",
-        ));
+        return Err(GameError::GalaxyGenerationFailed {
+            reason: "star_names.json contains empty names list",
+        });
     }
     Ok(parsed.names)
 }

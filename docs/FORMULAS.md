@@ -1,0 +1,131 @@
+---
+id: FORMULAS
+title: "Game formula derivations and citations"
+status: stub — growing by atom
+date: 2026-04-08
+---
+
+# FORMULAS.md
+
+> **Purpose:** every game formula used by the STARS 2026 engine must be
+> either cited to a public reference (`starsfaq.com`, `wiki.starsautohost.org`,
+> or the 1995 canonical *Stars!* documentation) or explicitly marked as a
+> STARS 2026 design decision with a reviewable rationale.
+>
+> **CLAUDE.md rule 8:** "Cite every game formula to starsfaq.com /
+> wiki.starsautohost.org / docs/FORMULAS.md." This file is the backstop
+> for formulas that don't have a clean upstream citation — each entry
+> must name its origin (canon lift vs. council decision) and, if it's a
+> council decision, the reasoning.
+
+---
+
+## Conventions
+
+Each entry follows this shape:
+
+- **Formula ID** — stable identifier referenced from code comments.
+- **Applies to** — the code symbol(s) that implement this formula.
+- **Source** — one of:
+  - **CANON** — lifted directly from a cited public reference.
+  - **COUNCIL** — a STARS 2026 design decision made by an agent
+    council, pending a canon cross-check or derivation.
+  - **PENDING** — placeholder; a council must revisit before the code
+    ships to v0.1.
+- **Value** — the actual numeric constants or closed-form expression.
+- **Rationale / citation** — URL, quote, or council summary.
+- **Cross-check by** — the atom or review pass that will promote this
+  entry from COUNCIL → CANON (or reject it).
+
+---
+
+## Entries
+
+### F-1 — `min_star_distance` (per-density star spacing)
+
+- **Applies to:** `engine/src/galaxy.rs::min_star_distance`
+- **Source:** **COUNCIL** (Atom 2, Game Design + Performance Engineer)
+- **Value:**
+
+  | Density | Minimum spacing (light-years) |
+  |---|---|
+  | Sparse  | 30 |
+  | Normal  | 25 |
+  | Dense   | 20 |
+  | Packed  | 15 |
+
+- **Rationale:** The Game Design council noted that *Stars!* 1995 canon
+  places individual stars at roughly 3–8 light-years apart on its
+  internal grid. STARS 2026 uses larger map dimensions (per
+  `GalaxySize::map_dimension`) and the raw 3–8 values would leave stars
+  visually touching at the browser zoom levels SPEC.md mandates. The
+  council authorized scaling the canon values up modestly to preserve
+  the relative ordering across density tiers while keeping the
+  rejection sampler tractable for Huge+Packed galaxies (the saturation
+  case — see `engine/tests/fr1_galaxy.rs` and Atom A.11).
+- **Cross-check by:** a future "formulas audit" atom before v0.1 ships.
+  The Crucible P1-4 finding (Devil's Advocate, 2026-04-08) flagged the
+  lack of derivation citation and pushed for either a canon reference
+  or a documented design decision; this entry is the documented design
+  decision. If a canon reference surfaces in the starsfaq.com or
+  autohost wiki sources, this entry is promoted to CANON.
+
+### F-2 — `GalaxySize::target_stars` (base star count per size)
+
+- **Applies to:** `engine/src/types.rs::GalaxySize::target_stars`
+- **Source:** Mixed.
+  - **CANON** for Tiny = 24 (SPEC D-2, Stars! 1995 reference).
+  - **COUNCIL** for Small = 70, Medium = 150, Large = 300, Huge = 600
+    (Atom 1, `types.rs` Phase 1 Task 1 council).
+- **Rationale:** Tiny was amended from a non-canonical 32 draft to the
+  canon value of 24 in Atom A.1 (commit `860ead4`). The other sizes
+  retain their Phase 1 council values pending a canon cross-check.
+- **Cross-check by:** tech / content council when `tech.rs` and
+  `planet.rs` integration lands; the actual *Stars!* 1995 values for
+  Small/Medium/Large/Huge should be verified against `starsfaq.com`
+  before v0.1 ships.
+
+### F-3 — Jitter shape for `actual_star_count`
+
+- **Applies to:** `engine/src/galaxy.rs::actual_star_count`
+- **Source:** **COUNCIL** (Atom 2.9 P0 fix + Atom A.4 re-derivation)
+- **Value:** asymmetric `[0%, +20%]` jitter applied to
+  `base * density_scale / 100`, where `density_scale ∈ {75, 100, 130, 160}`
+  for `{Sparse, Normal, Dense, Packed}` respectively.
+- **Rationale:** The closing Crucible for Atom 2 flagged an earlier
+  symmetric `[-10, +10]%` jitter as a SPEC FR-1 floor violation. The
+  asymmetric form guarantees the generator never returns fewer stars
+  than `base * density_scale / 100`, which for Tiny+Normal bottoms out
+  at the SPEC floor on every seed. The specific `+20%` ceiling was
+  chosen so the Tiny+Packed upper bound sits comfortably below the
+  SPEC FR-1 ceiling of 100 stars.
+- **Cross-check by:** none pending — this is a STARS 2026 design
+  decision, not a canon formula. The jitter shape has no *Stars!* 1995
+  equivalent; the original game used fixed counts with no per-seed
+  variation.
+
+---
+
+## Entries pending (no stub yet)
+
+These formulas will land here as their owning atoms ship:
+
+- **F-4** — `GalaxySize::map_dimension` (map size in light-years per
+  galaxy size) — Phase 1 Task 1 council value, pending canon cross-check.
+- **F-5** — `HabAxis` canonical windows — FR-4 (habitability formula)
+  owns this, pending `planet.rs`.
+- **F-6** — Planet mineral concentration depletion — FR-7, pending.
+- **F-7** — Population growth with crowding — FR-5, pending.
+- **F-8** — Tactical combat resolution order — FR-14, pending.
+
+---
+
+## How to add an entry
+
+1. Pick the next free ID (F-N).
+2. Fill in every field. **"TBD" is not an acceptable value for Source
+   or Rationale** — if you don't know, the entry is not ready to ship.
+3. Reference the entry from a Rust doc-comment in the implementing
+   file: `/// See docs/FORMULAS.md entry F-N.`
+4. If the entry is COUNCIL, open a follow-up ticket (in `BACKLOG.md`)
+   to cross-check against canon before v0.1.

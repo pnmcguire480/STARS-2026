@@ -125,6 +125,47 @@ fn fr1_tiny_normal_observed_range_is_narrow() {
     );
 }
 
+/// **A.11 — P1-8 resolution.** Huge+Packed saturation stress test.
+///
+/// The Crucible Assumption Auditor flagged that `STAR_PLACEMENT_ATTEMPTS`
+/// (the per-star retry budget in `place_one_star`) was only exercised
+/// by the Tiny+Normal FR-1 envelope test across 100 seeds. The actual
+/// saturation case — the densest density on the largest map — was
+/// never stressed, which is precisely where the rejection sampler is
+/// most likely to exhaust its budget if a future tweak to
+/// `min_star_distance` (see docs/FORMULAS.md F-1) pushes the packing
+/// constraint past its limit.
+///
+/// This test generates a Huge+Packed galaxy across 20 seeds and
+/// asserts success on every one. 20 is enough to catch the failure
+/// mode without ballooning test runtime (a single Huge+Packed
+/// generation is ~600 stars × ~100 rejection draws per star in the
+/// worst case, so ~60k RNG calls per seed).
+#[test]
+fn fr1_huge_packed_saturation_holds_across_20_seeds() {
+    let star_names = names();
+    for seed in 0..20u64 {
+        let settings = GameSettings {
+            galaxy_size: GalaxySize::Huge,
+            density: GalaxyDensity::Packed,
+            player_count: 1,
+            starting_year: 2400,
+            victory_conditions: vec![],
+            victory_requirements_met: 1,
+            ai_difficulty: AiDifficulty::Standard,
+            random_seed: seed,
+        };
+        let galaxy = generate_galaxy(&settings, &star_names).unwrap_or_else(|e| {
+            panic!("Huge+Packed saturation: seed {seed} exhausted rejection budget: {e}")
+        });
+        assert!(
+            galaxy.stars.len() >= 600,
+            "Huge+Packed seed {seed} produced only {} stars (expected >= 600 base)",
+            galaxy.stars.len()
+        );
+    }
+}
+
 /// FR-1 cross-density smoke test: a Tiny galaxy at every density tier
 /// must successfully generate. This catches the failure mode where a
 /// future tweak to `min_star_distance` accidentally pushes the
