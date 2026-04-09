@@ -29,7 +29,7 @@
 //!   2026-04-09, matching Stars! 1995 canon. Documented in
 //!   `docs/FORMULAS.md` F-5.
 
-use crate::types::{EnvClick, HabAxis};
+use crate::types::{EnvClick, Environment, HabAxis, HabRanges};
 
 /// Compute the habitability contribution of a single environment axis.
 ///
@@ -103,6 +103,65 @@ pub fn hab_value_one_axis(
             }
         }
     }
+}
+
+/// Calculate planet habitability for a given race (FR-4).
+///
+/// Returns an integer in the range **-45 to +100**:
+/// - **100** = perfect homeworld (all three axes centered in tolerance)
+/// - **0** = marginally habitable (at the edge of tolerance)
+/// - **Negative** = hostile (population dies each turn; see FR-5)
+/// - **-45** = maximally hostile (all three axes at max red distance)
+///
+/// The formula applies [`hab_value_one_axis`] to each of the three
+/// environment axes, then combines the results:
+/// - If any axis is red (outside tolerance), the total is the **negative
+///   sum** of all red distances (capped at -45).
+/// - If all axes are green (inside tolerance or immune), the total is
+///   `floor(sqrt(sum_of_points / 3) + 0.9) * ideality / 10000`.
+///
+/// See `docs/FORMULAS.md` F-4 for the full derivation and source
+/// (craig-stars `GetPlanetHabitability`, autohost wiki "Guts of
+/// Habitability").
+///
+/// # Arguments
+///
+/// - `env` — the planet's environment reading (gravity, temperature,
+///   radiation in 0–100 clicks).
+/// - `hab_ranges` — the race's tolerance ranges for each axis.
+#[must_use]
+pub fn habitability(env: &Environment, hab_ranges: &HabRanges) -> i32 {
+    let mut total_points: i32 = 0;
+    let mut ideality: i32 = 10000;
+    let mut total_red: i32 = 0;
+
+    // Process each axis, threading ideality through.
+    let axes: [(EnvClick, &HabAxis); 3] = [
+        (env.gravity, &hab_ranges.gravity),
+        (env.temperature, &hab_ranges.temperature),
+        (env.radiation, &hab_ranges.radiation),
+    ];
+
+    for (env_val, axis) in axes {
+        let (points, new_ideality, red) = hab_value_one_axis(env_val, axis, ideality);
+        total_points += points;
+        ideality = new_ideality;
+        total_red += red;
+    }
+
+    if total_red > 0 {
+        return -total_red;
+    }
+
+    // All axes green: combine via sqrt and ideality scalar.
+    // f64 is safe cross-target (proven in Atom B).
+    let points_f = f64::from(total_points);
+    let raw = (points_f / 3.0).sqrt() + 0.9;
+
+    // Truncate to integer, then scale by ideality.
+    #[allow(clippy::cast_possible_truncation)]
+    let base = raw as i32;
+    base * ideality / 10000
 }
 
 #[cfg(test)]
@@ -200,5 +259,123 @@ mod tests {
         // One click off → red
         let (_, _, red) = hab_value_one_axis(51, &axis, 10000);
         assert_eq!(red, 1);
+    }
+
+    // ─── C.2 tests: habitability (combined) ────────────────────────
+
+    /// Helper to build `HabRanges` from three `(min, max)` tuples.
+    fn ranges(g: (i32, i32), t: (i32, i32), r: (i32, i32)) -> HabRanges {
+        HabRanges {
+            gravity: HabAxis::range(g.0, g.1).unwrap(),
+            temperature: HabAxis::range(t.0, t.1).unwrap(),
+            radiation: HabAxis::range(r.0, r.1).unwrap(),
+        }
+    }
+
+    #[test]
+    fn perfect_homeworld_returns_100() {
+        // All three axes centered in a wide range.
+        let env = Environment {
+            gravity: 50,
+            temperature: 50,
+            radiation: 50,
+        };
+        let hab = ranges((0, 100), (0, 100), (0, 100));
+        assert_eq!(habitability(&env, &hab), 100);
+    }
+
+    #[test]
+    fn all_immune_returns_100() {
+        let env = Environment {
+            gravity: 0,
+            temperature: 100,
+            radiation: 50,
+        };
+        let hab = HabRanges {
+            gravity: HabAxis::Immune,
+            temperature: HabAxis::Immune,
+            radiation: HabAxis::Immune,
+        };
+        assert_eq!(habitability(&env, &hab), 100);
+    }
+
+    #[test]
+    fn single_axis_red_returns_negative() {
+        // Gravity is fine, temperature is fine, radiation is way off.
+        let env = Environment {
+            gravity: 50,
+            temperature: 50,
+            radiation: 95,
+        };
+        let hab = ranges((0, 100), (0, 100), (40, 60));
+        let result = habitability(&env, &hab);
+        assert!(
+            result < 0,
+            "single red axis should produce negative hab, got {result}"
+        );
+    }
+
+    #[test]
+    fn triple_red_returns_minus_45() {
+        // All three axes maximally hostile (15+ clicks outside each).
+        let env = Environment {
+            gravity: 0,
+            temperature: 0,
+            radiation: 0,
+        };
+        let hab = ranges((50, 80), (50, 80), (50, 80));
+        let result = habitability(&env, &hab);
+        assert_eq!(result, -45, "triple max-red should be -45, got {result}");
+    }
+
+    #[test]
+    fn partial_hab_is_between_0_and_100() {
+        // Planet is inside all ranges but not centered.
+        let env = Environment {
+            gravity: 30,
+            temperature: 70,
+            radiation: 50,
+        };
+        let hab = ranges((20, 80), (20, 80), (20, 80));
+        let result = habitability(&env, &hab);
+        assert!(
+            result > 0 && result < 100,
+            "partial hab should be 0 < h < 100, got {result}"
+        );
+    }
+
+    #[test]
+    fn immune_axis_boosts_partial_hab() {
+        // Two normal axes (not centered) + one immune axis.
+        let env = Environment {
+            gravity: 30,
+            temperature: 70,
+            radiation: 50,
+        };
+        let hab_no_immune = ranges((20, 80), (20, 80), (20, 80));
+        let hab_one_immune = HabRanges {
+            gravity: HabAxis::range(20, 80).unwrap(),
+            temperature: HabAxis::range(20, 80).unwrap(),
+            radiation: HabAxis::Immune,
+        };
+        let normal = habitability(&env, &hab_no_immune);
+        let boosted = habitability(&env, &hab_one_immune);
+        assert!(
+            boosted >= normal,
+            "immune axis should help: normal={normal}, boosted={boosted}"
+        );
+    }
+
+    #[test]
+    fn habitability_is_deterministic() {
+        let env = Environment {
+            gravity: 42,
+            temperature: 73,
+            radiation: 15,
+        };
+        let hab = ranges((10, 90), (20, 80), (5, 50));
+        let a = habitability(&env, &hab);
+        let b = habitability(&env, &hab);
+        assert_eq!(a, b);
     }
 }
