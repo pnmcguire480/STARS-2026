@@ -51,10 +51,10 @@ The single most important property the brief asked for — **every commit on mai
 ---
 
 ## Now
-- **Date:** 2026-04-09 (Atom B closed, Atom C starting)
-- **Phase:** 1 — Atom 2 **COMPLETE**, Atom A **COMPLETE** (13 sub-atoms, all 9 Crucible P1s closed), Atom B **COMPLETE** (3 sub-atoms, cross-target determinism proven — 1204 bytes byte-identical wasm32 vs native, 5 sniff gates). 73 tests total. Atom C (`planet.rs`) **STARTING**.
-- **Active task:** Atom C — `engine/src/planet.rs`. Full 5-agent council (Rust + Plan + Performance Engineer + Game Design + First Principles). Covers FR-2 (starting worlds), FR-4 (habitability), FR-5 (population growth), FR-6 (resource generation), FR-7 (mineral extraction).
-- **Blocker:** None. Cairntir MCP wing seeded (4 drawers). All prior debt cleared.
+- **Date:** 2026-04-09 (Atom C closed, Atom D starting)
+- **Phase:** 1 — Atoms 2, A, B, C all **COMPLETE**. 102 tests (95 unit + 2 determinism + 5 FR-1), 5 sniff gates, 1252-byte cross-target fingerprint. Atom C shipped FR-4 (habitability) + FR-5 (population growth) in `engine/src/planet.rs` (6 sub-atoms, 30 new tests).
+- **Active task:** Atom D — FR-6 (resource generation) + FR-7 (mineral extraction), extending `planet.rs`. Formula research needed before code (same pattern as Atom C prep). No council — module structure established.
+- **Blocker:** None. Cairntir MCP wing seeded (5 drawers). All prior debt cleared.
 
 ## Just Finished
 - Phase 0 closed: governance kernel committed, Cargo workspace green, `v0.0.1-skeleton` released.

@@ -15,9 +15,9 @@ Last updated: 2026-04-09 (Atom B closed, Atom C next)
 
 ---
 
-## Immediate next — Atom C (planet.rs with 5-agent council)
+## Immediate next — Atom D (FR-6 resource generation + FR-7 mineral extraction)
 
-Atom C = `engine/src/planet.rs`. Full 5-agent council needed: Rust + Plan + Performance Engineer + Game Design + First Principles. Scope covers SPEC.md FR-2 (starting worlds + balanced hab), FR-4 (habitability formula), FR-5 (population growth), FR-6 (resource generation), FR-7 (mineral extraction). Council will likely split into 8–12 sub-atoms. The `data/*.json` loader pattern (established in A.6) and the `GameError` struct variant pattern (A.9) are both ready for planet.rs to consume.
+Atom D extends `engine/src/planet.rs` with the remaining planet-economy formulas. Needs formula sourcing from starsfaq.com / craig-stars before code (same pattern as Atom C). No council needed — the module structure and free-function pattern are established. Key formulas: colonist resources (pop/1000), factory resources (factories × efficiency), operable limits (factories/mines per 10K colonists), mineral extraction (mines × concentration/100 × rate), concentration depletion curve, minimum concentration floor of 1.
 
 ## Deferred atoms
 
