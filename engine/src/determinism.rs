@@ -121,7 +121,10 @@ pub mod test_support {
         0x64, 0x61, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x59, 0x40, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x80, 0x6C, 0x40, 0x18, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x47, 0x61, 0x63,
         0x72, 0x75, 0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE0, 0x68, 0x40, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x20, 0x62, 0x40,
+        0x00, 0x20, 0x62, 0x40, 0x64, 0x00, 0x00, 0x00, 0x0D, 0x00, 0x00, 0x00, 0xF1, 0xFF, 0xFF,
+        0xFF, 0x10, 0x27, 0x00, 0x00, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4D, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF6,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     ];
 
     /// Compute the determinism fingerprint by exercising every public
@@ -303,6 +306,65 @@ pub mod test_support {
                 bytes.extend_from_slice(&s.position.x.to_bits().to_le_bytes());
                 bytes.extend_from_slice(&s.position.y.to_bits().to_le_bytes());
             }
+        }
+
+        // ─── 16. habitability + population_growth (Atom C) ────────────
+        // Exercise the planet formulas with fixed inputs and append the
+        // results. This pins the hab formula (FR-4) and growth formula
+        // (FR-5) into the cross-target determinism contract.
+        {
+            use crate::planet::{habitability, max_population, population_growth};
+            use crate::types::{Environment, HabRanges};
+
+            // Perfect homeworld: all axes centered in wide range.
+            let env_perfect = Environment {
+                gravity: 50,
+                temperature: 50,
+                radiation: 50,
+            };
+            let ranges_wide = HabRanges {
+                gravity: HabAxis::range(0, 100).expect("valid"),
+                temperature: HabAxis::range(0, 100).expect("valid"),
+                radiation: HabAxis::range(0, 100).expect("valid"),
+            };
+            let hab_perfect = habitability(&env_perfect, &ranges_wide);
+            bytes.extend_from_slice(&hab_perfect.to_le_bytes());
+
+            // Partial hab: off-center on all axes.
+            let env_partial = Environment {
+                gravity: 30,
+                temperature: 70,
+                radiation: 25,
+            };
+            let ranges_narrow = HabRanges {
+                gravity: HabAxis::range(20, 80).expect("valid"),
+                temperature: HabAxis::range(20, 80).expect("valid"),
+                radiation: HabAxis::range(20, 80).expect("valid"),
+            };
+            let hab_partial = habitability(&env_partial, &ranges_narrow);
+            bytes.extend_from_slice(&hab_partial.to_le_bytes());
+
+            // Hostile: radiation way outside range.
+            let env_hostile = Environment {
+                gravity: 50,
+                temperature: 50,
+                radiation: 95,
+            };
+            let hab_hostile = habitability(&env_hostile, &ranges_narrow);
+            bytes.extend_from_slice(&hab_hostile.to_le_bytes());
+
+            // Max population at various hab levels.
+            bytes.extend_from_slice(&max_population(100).units().to_le_bytes());
+            bytes.extend_from_slice(&max_population(50).units().to_le_bytes());
+            bytes.extend_from_slice(&max_population(-10).units().to_le_bytes());
+
+            // Population growth: normal, crowded, hostile.
+            let growth_normal = population_growth(Colonists::new(1000), 80, 15);
+            bytes.extend_from_slice(&growth_normal.to_le_bytes());
+            let growth_crowded = population_growth(Colonists::new(5000), 100, 15);
+            bytes.extend_from_slice(&growth_crowded.to_le_bytes());
+            let growth_hostile = population_growth(Colonists::new(1000), -10, 15);
+            bytes.extend_from_slice(&growth_hostile.to_le_bytes());
         }
 
         bytes
