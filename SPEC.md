@@ -94,7 +94,7 @@ STARS 2026 is an all-original implementation written from scratch in modern lang
 
 | # | Requirement |
 |---|---|
-| FR-1 | Generate a procedural galaxy from a seed (32–100 stars for v0.1, "Tiny" size). |
+| FR-1 | Generate a procedural galaxy from a seed (24–100 stars for v0.1, "Tiny" size). See "Deviations from 1995 canon" below — Tiny floor is 24 per canon, not 32. |
 | FR-2 | Place 1 human player + 1–3 AI opponents on starting worlds with balanced hab values. |
 | FR-3 | Allow race creation with 1 PRT (the rest deferred to v1.0) and a basic LRT picker. |
 | FR-4 | Calculate planet habitability per race using the canonical *Stars!* hab formula (sourced from starsfaq.com). |
@@ -152,6 +152,20 @@ STARS 2026 is an all-original implementation written from scratch in modern lang
 
 ### v1.0
 - AC-12: All 10 PRTs balance-tested via 1000 AI-vs-AI matches; no PRT has >65% or <35% win rate.
+
+---
+
+## Deviations from 1995 canon
+
+STARS 2026 is a faithful remake, not a clone. A small number of mechanical
+deviations from the original *Stars!* (1995) have been authorized. Every
+deviation on this list has a documented reason and a reviewable source.
+**Any new deviation must be added here before shipping.**
+
+| # | Deviation | Canon | STARS 2026 | Reason |
+|---|---|---|---|---|
+| D-1 | Tech field cap | 26 | **30** | Signature STARS 2026 extension — adds four late-game tiers. LRT/PRT bonuses can push higher. Content + cost curve for levels 27–30 to be decided by the `tech.rs` council. |
+| D-2 | "Tiny" galaxy star count (FR-1) | **24**–100 | 24–100 | Actually *restored* to canon after an earlier draft of FR-1 wrote "32–100". Canon wins; the earlier 32 floor was a non-canonical default that survived by inertia. |
 
 ---
 
